@@ -209,8 +209,8 @@ def save_images(object_file: str) -> None:
     RendererUtility.set_cpu_threads(10)
     # 关闭法向量输出（冗余）
     # bproc.renderer.enable_normals_output()
-    # 关闭深度输出（冗余）
-    # bproc.renderer.enable_depth_output(activate_antialiasing=False)
+    # 开启深度输出
+    bproc.renderer.enable_depth_output(activate_antialiasing=False)
     bproc.renderer.set_output_format(enable_transparency=True)
 
     data = bproc.renderer.render(verbose=True)
@@ -222,6 +222,26 @@ def save_images(object_file: str) -> None:
     #     render_path = os.path.join(args.output_dir, f"{index:03d}_normal.png")
     #     save_array_as_image(image, "normals", render_path)
     
+    # ===== 保存 depth（mesh 渲染）=====
+    for index, depth in enumerate(data["depth"]):
+        # depth: [H, W] float32, 单位：米
+        depth_file_base = f"depth_{index:04d}"
+        
+        # 保存原始深度 .npy
+        np.save(os.path.join(args.output_dir, f"{depth_file_base}.npy"), depth.astype(np.float32))
+
+        # 可视化 depth，用0-1归一化处理，避免 inf/大值
+        depth_vis = depth.copy()
+        depth_vis[depth_vis > 10.0] = 0.0  # 统一背景/远距离
+        valid = depth_vis > 0
+        if valid.any():
+            depth_vis[valid] = (depth_vis[valid] - depth_vis[valid].min()) / (depth_vis[valid].max() - depth_vis[valid].min())
+        
+        # 保存 PNG 可视化
+        depth_vis_path = os.path.join(args.output_dir, f"{depth_file_base}.png")
+        plt.imsave(depth_vis_path, depth_vis, cmap="gray", vmin=0, vmax=1)
+        plt.close()  # 防止内存泄漏
+
 
    # ===== 保存相机参数（推荐方式）=====
     cam2worlds = []
@@ -236,9 +256,6 @@ def save_images(object_file: str) -> None:
         cam2world=cam2worlds,
         K=K
     )
-
-
-
 
     # Adds states to the data dict
     #print(cam_states)

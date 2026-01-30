@@ -10,10 +10,10 @@ BLENDER_EXE = r"D:\1Ahaha\AA3d\Blender\blender.exe"
 # BlenderProc临时目录
 BLENDER_PROC_TEMP = os.path.join(ROOT_DIR, "blenderproc_temp")
 # 渲染相关路径
-TOOLKIT_SCRIPT = os.path.join(ROOT_DIR, "3D-Data-Processing-Toolkit-main", "render_single_glb.py")
+TOOLKIT_SCRIPT = os.path.join(ROOT_DIR, "3D-Data-Processing-Toolkit", "tools","render_single_glb.py")
 
 # 【关键配置】在这里添加/删除要渲染的类别（支持任意多个）
-CATEGORIES_TO_RENDER = [ "bench","birdhouse","bookshelf","bottle" ]  # 可扩展：比如加 "chair", "car" 等
+CATEGORIES_TO_RENDER = [ "basket","bathtub","bed","bench" ]  # 可扩展：比如加 "chair", "car" 等
 
 # ========== 强制环境变量（无C盘写入） ==========
 os.environ["BLENDER_PROC_TEMP_DIR"] = BLENDER_PROC_TEMP
@@ -98,13 +98,16 @@ def render_category(category):
         model_name = os.path.splitext(glb_file)[0]
         out_dir = os.path.join(output_root, model_name)
         
-        # 跳过已渲染的模型（检查是否有12张rgb图片）
+        # 跳过已渲染的模型
         if os.path.exists(out_dir):
             rgb_files = [f for f in os.listdir(out_dir)
                          if f.startswith("rgb_") and f.endswith(".png")]
             cam_param_file = os.path.join(out_dir, "camera_params.npz")
 
-            if len(rgb_files) >= 12 and os.path.exists(cam_param_file):
+            depth_files = [f for f in os.listdir(out_dir) if f.startswith("depth_") and f.endswith(".npy")]
+
+            if len(rgb_files) >= 12 and len(depth_files) >= 12 and os.path.exists(cam_param_file):
+
                 print(f"[{idx+1}/{total_models}] 已渲染（含相机参数），跳过：{model_name}")
                 success_count += 1
                 continue
