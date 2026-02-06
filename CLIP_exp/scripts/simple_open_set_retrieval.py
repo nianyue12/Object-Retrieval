@@ -4,13 +4,25 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.metrics import roc_auc_score, roc_curve
+from CLIP_exp.utils.metrics import compute_open_set_metrics
+
+
+# ======================
+# 0️⃣ 统一路径锚点（关键！）
+# ======================
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CLIP_EXP_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+
 
 # ======================
 # 1️⃣ 路径配置
 # ======================
 feat_root = r"D:/1Ahaha/AA3d/output_224_clip_feat"
 data_root = r"D:/1Ahaha/AA3d/output_224"
-save_dir = "./results"
+
+save_dir = os.path.join(CLIP_EXP_DIR, "results", "rgb_mv")
+os.makedirs(save_dir, exist_ok=True)
+
 os.makedirs(save_dir, exist_ok=True)
 
 
@@ -120,11 +132,12 @@ open_scores = sim_qg.max(axis=1)
 # ======================
 # 6️⃣ 开集指标（AUROC / FPR95）
 # ======================
-auroc = roc_auc_score(query_is_known, open_scores)
+auroc, fpr95 = compute_open_set_metrics(
+    open_scores,
+    query_is_known,
+    tpr_target=0.95
+)
 
-fpr, tpr, thresholds = roc_curve(query_is_known, open_scores)
-idx_95 = np.argmin(np.abs(tpr - 0.95))
-fpr95 = fpr[idx_95]
 
 print(f"AUROC: {auroc:.4f}")
 print(f"FPR@95TPR: {fpr95:.4f}")

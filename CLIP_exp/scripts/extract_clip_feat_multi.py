@@ -1,36 +1,31 @@
 import os
 import numpy as np
-import torch
-import clip
 from PIL import Image
 from tqdm import tqdm
+from CLIP_exp.models.clip_encoder import CLIPEncoder
 
 # ===== 配置 =====
+encoder = CLIPEncoder(model_name="ViT-B/32")
 ROOT_IMG_DIR = r"D:/1Ahaha/AA3d/output_224"
 OUT_FEAT_DIR = r"D:/1Ahaha/AA3d/output_224_clip_feat"
 N_VIEWS = 12
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-model, preprocess = clip.load("ViT-B/32", device=device)
-model.eval()
 
 os.makedirs(OUT_FEAT_DIR, exist_ok=True)
 
 def extract_object_feat(obj_dir):
-    feats = []
+    imgs = []
     for i in range(N_VIEWS):
         img_path = os.path.join(obj_dir, f"rgb_{i:04d}.png")
         if not os.path.exists(img_path):
             continue
-        img = preprocess(Image.open(img_path)).unsqueeze(0).to(device)
-        with torch.no_grad():
-            feat = model.encode_image(img)
-            feat = feat / feat.norm(dim=-1, keepdim=True)
-        feats.append(feat.cpu().numpy())
-    if len(feats) == 0:
+        imgs.append(Image.open(img_path).convert("RGB"))
+
+    if len(imgs) == 0:
         return None
-    feats = np.concatenate(feats, axis=0)   # [V, 512]
-    return feats.mean(axis=0)                # [512]
+    
+    feat = encoder.encode_multi_view(imgs)   # [V, 512]
+    return feat                # [512]
 
 # ===== 主循环 =====
 for cat_dir in sorted(os.listdir(ROOT_IMG_DIR)):

@@ -1,3 +1,11 @@
+"""
+Sanity check only.
+Not used for paper results.
+
+"""
+
+
+
 import os
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
