@@ -1,55 +1,57 @@
 # CLIP-based Open-set 3D Object Retrieval
 
-This project contains experiments for open-set 3D object retrieval using
-multi-view RGB images and rendered depth maps with a CLIP model.
+This project implements open-set 3D object retrieval using multi-view RGB images and depth maps rendered from 3D models, with a CLIP backbone.
 
 ---
 
 ## Experiments
 
-### 1. RGB Multi-view CLIP 
+### 1️⃣ RGB Multi-view CLIP
 
-**Backbone**
-- CLIP ViT-B/32 
-
-**Input**
-- 12-view RGB images rendered per 3D object
-- Image resolution: 224 × 224
-
-**Feature Extraction**
-- Each view is encoded independently by the CLIP image encoder
-- View-level features are aggregated via mean pooling
-
-**Evaluation**
-- Open-set 3D object retrieval
-- Metrics:
-  - AUROC
-  - FPR@95TPR
+- **Backbone:** CLIP ViT-B/32  
+- **Input:** 12-view RGB images per 3D object, 224 × 224 resolution  
+- **Feature Extraction:**  
+  - Each view encoded independently via CLIP image encoder  
+  - View-level features aggregated using mean pooling (`multi_view=False` in scripts)  
+- **Evaluation:**  
+  - Open-set 3D object retrieval  
+  - Metrics: AUROC, FPR@95TPR  
 
 ---
 
-### 2. Depth Multi-view CLIP 
+### 2️⃣ Depth Multi-view CLIP
 
-**Input**
-- 12-view rendered depth maps aligned with RGB camera parameters
-- Depth maps are converted to 3-channel images for CLIP compatibility
-
-**Feature Extraction**
-- The same CLIP image encoder is used 
-- Depth features are aggregated via mean pooling
-
-**Evaluation**
-- Identical open-set protocol as RGB experiments
+- **Input:** 12-view rendered depth maps aligned with RGB cameras, converted to 3-channel images  
+- **Feature Extraction:**  
+  - Same CLIP image encoder as RGB  
+  - Aggregated using mean pooling   
+- **Evaluation:**  
+  - Open-set 3D object retrieval  
+  - Metrics: AUROC, FPR@95TPR  
 
 ---
 
-## Open-set Retrieval Setting
+### 3️⃣ RGB + Depth Feature Fusion
 
-- Object categories are split into known (seen) and unknown (unseen) classes
-- Gallery contains only known-class objects
-- Queries include both known and unknown objects
-- Open-set score is defined as the maximum cosine similarity to the gallery
+- **Fusion Method:** Weighted sum of RGB and Depth features:  
+
+  $$fused = \alpha \cdot rgb\_feat + (1 - \alpha) \cdot depth\_feat$$
+
+- **Feature Settings:**  
+  - RGB feature: `multi_view=False`  
+  - Depth feature: `multi_view=False` 
+- **Evaluation:**  
+  - Same open-set retrieval metrics  
+  - Fusion weight tested: e.g., $\alpha = 0.3$
 
 ---
 
+## Open-set Retrieval Protocol
 
+- **Total categories:** 50  
+- **Known (seen) classes:** 40  
+- **Unknown (unseen) classes:** 10  
+
+- **Gallery:** 70% of samples from known classes only  
+- **Queries:** Remaining 30% of known class samples + all unknown class samples  
+- **Open-set score:** Maximum cosine similarity to gallery

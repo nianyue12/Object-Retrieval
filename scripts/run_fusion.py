@@ -1,56 +1,48 @@
-# scripts/run_fusion_final.py
+# scripts/run_fusion.py
+
 import os
 import random
 import numpy as np
-import matplotlib.pyplot as plt
+import json
 from sklearn.metrics.pairwise import cosine_similarity
 
 from utils.metrics import compute_open_set_metrics
 from utils.split import build_class_file_dict, build_open_set_split
 from utils.features import load_feature
-from utils.scoring import score_max, score_topk
+from utils.scoring import score_topk
 
-# ======================
-# 0️⃣ 固定随机种子
-# ======================
+# ------------------------ 0️⃣ 固定随机种子 ------------------------
 SEED = 0
 random.seed(SEED)
 np.random.seed(SEED)
 
-# ======================
-# 1️⃣ 路径配置
-# ======================
+# ------------------------ 1️⃣ 路径配置 ------------------------
 rgb_root = r"D:/1Ahaha/AA3d/output_224_clip_feat"
 depth_root = r"D:/1Ahaha/AA3d/output_224_clip_feat_depth"
-save_dir = os.path.join("results", "fusion_final")
+save_dir = os.path.join("results", "fusion")
 os.makedirs(save_dir, exist_ok=True)
 
-# ======================
-# 2️⃣ 构建公共文件列表
-# ======================
-class_to_files = {}
-rgb_dict = build_class_file_dict(rgb_root)
-depth_dict = build_class_file_dict(depth_root)
+# ------------------------ 2️⃣ 构建公共文件列表 ------------------------
+def build_common_class_files(rgb_root, depth_root):
+    rgb_dict = {cls: [os.path.basename(f) for f in files] 
+                for cls, files in build_class_file_dict(rgb_root).items()}
+    depth_dict = {cls: [os.path.basename(f) for f in files] 
+                  for cls, files in build_class_file_dict(depth_root).items()}
 
-for cls in rgb_dict:
-    if cls not in depth_dict:
-        continue
-    rgb_files = set([os.path.basename(f) for f in rgb_dict[cls]])
-    depth_files = set([os.path.basename(f) for f in depth_dict[cls]])
-    common_files = sorted(list(rgb_files & depth_files))
-    if len(common_files) > 0:
-        class_to_files[cls] = common_files
+    common_classes = {}
+    for cls in rgb_dict:
+        if cls in depth_dict:
+            common_files = sorted(list(set(rgb_dict[cls]) & set(depth_dict[cls])))
+            if len(common_files) > 0:
+                common_classes[cls] = common_files
+    return common_classes
 
-# ======================
-# 3️⃣ Open-set split
-# ======================
-(
-    gallery_file_list,
-    query_file_list,
-    query_is_known,
-    KNOWN_CLASSES,
-    UNKNOWN_CLASSES,
-) = build_open_set_split(class_to_files, known_num=40, unknown_num=10, gallery_ratio=0.7, seed=SEED)
+class_to_files = build_common_class_files(rgb_root, depth_root)
+
+# ------------------------ 3️⃣ Open-set split ------------------------
+gallery_file_list, query_file_list, query_is_known, KNOWN_CLASSES, UNKNOWN_CLASSES = build_open_set_split(
+    class_to_files, known_num=40, unknown_num=10, gallery_ratio=0.7, seed=SEED
+)
 
 query_is_known = np.array(query_is_known)
 
@@ -60,9 +52,7 @@ print("Gallery size:", len(gallery_file_list))
 print("Query size:", len(query_file_list))
 print("Known queries:", query_is_known.sum(), "Unknown queries:", (query_is_known==0).sum())
 
-# ======================
-# 4️⃣ 融合函数
-# ======================
+# ------------------------ 4️⃣ 特征融合函数 ------------------------
 def fuse_feature(rgb_feat, depth_feat, alpha=0.3):
     fused = alpha * rgb_feat + (1 - alpha) * depth_feat
     norm = np.linalg.norm(fused)
@@ -70,72 +60,48 @@ def fuse_feature(rgb_feat, depth_feat, alpha=0.3):
         fused = fused / norm
     return fused
 
-# ======================
-# 5️⃣ 加载特征
-# ======================
+# ------------------------ 5️⃣ 加载融合特征 ------------------------
 def load_feats(file_list, alpha=0.3):
     feats = []
     for cls, fname in file_list:
         rgb_feat = load_feature(os.path.join(rgb_root, cls, fname), multi_view=False)
-        depth_feat = load_feature(os.path.join(depth_root, cls, fname), multi_view=True)
-        feats.append(fuse_feature(rgb_feat, depth_feat, alpha=alpha))
+        depth_feat = load_feature(os.path.join(depth_root, cls, fname), multi_view=False)  # ✅ 改成 False
+        feats.append(fuse_feature(rgb_feat, depth_feat, alpha))
     return np.stack(feats)
 
 gallery_feats = load_feats(gallery_file_list, alpha=0.3)
 query_feats = load_feats(query_file_list, alpha=0.3)
 
-# ======================
-# 6️⃣ Open-set Scoring
-# ======================
-sim = cosine_similarity(query_feats, gallery_feats)
-scores_max = score_max(sim)
-scores_top5 = score_topk(sim, k=5)
+# ------------------------ 6️⃣ 计算相似度 ------------------------
+sim_to_gallery = cosine_similarity(query_feats, gallery_feats)
 
-# ======================
-# 7️⃣ 指标
-# ======================
-auroc_max, fpr95_max = compute_open_set_metrics(scores_max, query_is_known)
-auroc_top5, fpr95_top5 = compute_open_set_metrics(scores_top5, query_is_known)
+# ------------------------ 7️⃣ 计算评分 ------------------------
+scores_max = sim_to_gallery.max(axis=1)
+scores_top5 = score_topk(sim_to_gallery, k=5)
 
-print(f"\nFusion α=0.3 Max AUROC: {auroc_max:.4f}, FPR95: {fpr95_max:.4f}")
-print(f"Fusion α=0.3 Top-5 AUROC: {auroc_top5:.4f}, FPR95: {fpr95_top5:.4f}")
+# ------------------------ 8️⃣ 计算指标 ------------------------
+methods = [("Max", scores_max), ("Top-5 Mean", scores_top5)]
+metrics_results = []
 
-# ======================
-# 8️⃣ 可视化分数分布
-# ======================
-plt.figure(figsize=(10, 6))
+for name, scores in methods:
+    auroc, fpr95 = compute_open_set_metrics(scores, query_is_known, tpr_target=0.95)
+    metrics_results.append({"method": name, "AUROC": float(auroc), "FPR95": float(fpr95)})
+    print(f"{name:12} AUROC: {auroc:.4f}  FPR95: {fpr95:.4f}")
 
-plt.hist(scores_max[query_is_known==1], bins=50, alpha=0.6, density=True, label='Known Query (Max)')
-plt.hist(scores_max[query_is_known==0], bins=50, alpha=0.6, density=True, label='Unknown Query (Max)')
+# ------------------------ 9️⃣ 保存 JSON ------------------------
+output = {
+    "known_classes": KNOWN_CLASSES,
+    "unknown_classes": UNKNOWN_CLASSES,
+    "gallery_size": len(gallery_file_list),
+    "query_size": len(query_file_list),
+    "known_queries": int(query_is_known.sum()),
+    "unknown_queries": int((query_is_known==0).sum()),
+    "metrics": metrics_results
+}
 
-plt.hist(scores_top5[query_is_known==1], bins=50, alpha=0.6, density=True, label='Known Query (Top-5 Mean)')
-plt.hist(scores_top5[query_is_known==0], bins=50, alpha=0.6, density=True, label='Unknown Query (Top-5 Mean)')
+metrics_path = os.path.join(save_dir, "fusion_results.json")
+with open(metrics_path, "w") as f:
+    json.dump(output, f, indent=4)
 
-plt.xlabel("Cosine Similarity")
-plt.ylabel("Density")
-plt.title("Fusion α=0.3 Open-set Score Distribution")
-plt.legend()
-plt.grid(True, alpha=0.3)
-
-plot_path = os.path.join(save_dir, "fusion_alpha0.3_score_distribution.png")
-plt.savefig(plot_path, dpi=200, bbox_inches="tight")
-plt.show()
-print(f"Saved plot to: {plot_path}")
-
-# ======================
-# 9️⃣ 保存结果
-# ======================
-np.savez(
-    os.path.join(save_dir, "fusion_alpha0.3_results.npz"),
-    scores_max=scores_max,
-    scores_top5=scores_top5,
-    query_is_known=query_is_known,
-    auroc_max=auroc_max,
-    fpr95_max=fpr95_max,
-    auroc_top5=auroc_top5,
-    fpr95_top5=fpr95_top5,
-    known_classes=KNOWN_CLASSES,
-    unknown_classes=UNKNOWN_CLASSES
-)
-
-print("\n✅ Fusion α=0.3 scoring experiment done!")
+print("\nResults saved:", metrics_path)
+print("\n✅ Fusion α=0.3 scoring实验完成！")
