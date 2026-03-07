@@ -28,6 +28,8 @@ class CLIPEncoder:
         imgs: list[PIL.Image]
         return: (512,) numpy feature (mean pooled)
         """
-        feats = [self.encode_image(img) for img in imgs]
-        feats = np.stack(feats)
-        return feats.mean(axis=0)
+        feats = [self.encode_image(img) for img in imgs]  # (V,512)
+        feats = np.stack(feats)                           # 堆叠成 (V,512)
+        fused_feat = feats.mean(axis=0)                   # 多视图平均
+        fused_feat = fused_feat / np.linalg.norm(fused_feat)  # 最终归一化
+        return fused_feat

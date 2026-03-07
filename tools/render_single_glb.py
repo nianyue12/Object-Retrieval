@@ -222,13 +222,9 @@ def save_images(object_file: str) -> None:
     #     render_path = os.path.join(args.output_dir, f"{index:03d}_normal.png")
     #     save_array_as_image(image, "normals", render_path)
     
-    # ===== 保存 depth（mesh 渲染）=====
+    # ===== 保存 depth（mesh 渲染，可视化 PNG）=====
     for index, depth in enumerate(data["depth"]):
-        # depth: [H, W] float32, 单位：米
         depth_file_base = f"depth_{index:04d}"
-        
-        # 保存原始深度 .npy
-        np.save(os.path.join(args.output_dir, f"{depth_file_base}.npy"), depth.astype(np.float32))
 
         # 可视化 depth，用0-1归一化处理，避免 inf/大值
         depth_vis = depth.copy()
@@ -236,7 +232,7 @@ def save_images(object_file: str) -> None:
         valid = depth_vis > 0
         if valid.any():
             depth_vis[valid] = (depth_vis[valid] - depth_vis[valid].min()) / (depth_vis[valid].max() - depth_vis[valid].min())
-        
+
         # 保存 PNG 可视化
         depth_vis_path = os.path.join(args.output_dir, f"{depth_file_base}.png")
         plt.imsave(depth_vis_path, depth_vis, cmap="gray", vmin=0, vmax=1)

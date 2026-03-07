@@ -13,7 +13,7 @@ BLENDER_PROC_TEMP = os.path.join(ROOT_DIR, "blenderproc_temp")
 TOOLKIT_SCRIPT = os.path.join(ROOT_DIR, "3D-Data-Processing-Toolkit", "tools","render_single_glb.py")
 
 # 【关键配置】在这里添加/删除要渲染的类别（支持任意多个）
-CATEGORIES_TO_RENDER = [ "basket","bathtub","bed","bench" ]  # 可扩展：比如加 "chair", "car" 等
+CATEGORIES_TO_RENDER = [ "ashcan" ]  # 可扩展：比如加 "chair", "car" 等
 
 # ========== 强制环境变量（无C盘写入） ==========
 os.environ["BLENDER_PROC_TEMP_DIR"] = BLENDER_PROC_TEMP

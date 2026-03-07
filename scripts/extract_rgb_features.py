@@ -2,7 +2,7 @@ import os
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
-from CLIP_exp.models.clip_encoder import CLIPEncoder
+from models.clip_encoder import CLIPEncoder
 
 # ===== 配置 =====
 encoder = CLIPEncoder(model_name="ViT-B/32")
@@ -35,6 +35,10 @@ for cat_dir in sorted(os.listdir(ROOT_IMG_DIR)):
     cat_name = cat_dir.replace("_multi_view", "")
     full_cat_dir = os.path.join(ROOT_IMG_DIR, cat_dir)
 
+    # 在类别循环开始时就创建目录（只需创建一次）
+    cat_feat_dir = os.path.join(OUT_FEAT_DIR, cat_name)
+    os.makedirs(cat_feat_dir, exist_ok=True)
+
     print(f"\n📂 Processing category: {cat_name}")
 
     for obj_id in tqdm(os.listdir(full_cat_dir)):
@@ -46,8 +50,8 @@ for cat_dir in sorted(os.listdir(ROOT_IMG_DIR)):
         if feat is None:
             continue
 
-        out_name = f"{cat_name}_{obj_id}.npy"
-        out_path = os.path.join(OUT_FEAT_DIR, out_name)
+        out_path = os.path.join(cat_feat_dir, f"{obj_id}.npy")
         np.save(out_path, feat)
 
 print("\n✅ All features extracted.")
+
