@@ -1,4 +1,5 @@
 import os
+import cv2
 import numpy as np
 from tqdm import tqdm
 
@@ -60,7 +61,8 @@ def normalize_depth(depth):
     if not np.any(mask):
         return depth
     d_min = depth[mask].min()
-    d_max = depth[mask].max()
+    # 新增：限制最大深度
+    d_max = np.percentile(depth[mask], 95)
     # 新增：避免除以零（深度值全相同的极端情况）
     if d_max - d_min < 1e-6:
         depth[mask] = 0.0
@@ -96,16 +98,20 @@ def generate_depth_maps(pc_path, cam_param_path, output_dir):
     for i in range(len(cam2world)):
         depth = pointcloud_to_depth(points, cam2world[i], K)
         depth = normalize_depth(depth)
-        depth_maps.append(depth)
 
-        np.save(
-            os.path.join(output_dir, f"depth_{i:02d}.npy"),
-            depth.astype(np.float32)
-        )
+        # 增1：填充空洞（解决星空图）
+        depth = cv2.dilate(depth, np.ones((5,5), np.uint8))
 
-    depth_maps = np.stack(depth_maps, axis=0)
-    np.save(os.path.join(output_dir, "depth_maps.npy"), depth_maps)
+        # 增2：平滑深度图
+        depth = cv2.GaussianBlur(depth, (5,5), 0)
 
+        # 归一化到 0~255
+        depth_uint8 = (depth * 255).astype(np.uint8)
+
+        # 保存为 PNG
+        cv2.imwrite(os.path.join(output_dir, f"depth_{i:02d}.png"), depth_uint8)
+
+    
 
 # ================= ShapeNet55 批处理主逻辑 =================
 def batch_process_shapenet55():
@@ -146,7 +152,7 @@ def batch_process_shapenet55():
                 continue
 
             # 已生成则跳过（支持断点续跑）
-            if os.path.exists(os.path.join(out_dir, "depth_maps.npy")):
+            if os.path.exists(os.path.join(out_dir, "depth_11.png")):
                 total_skip += 1
                 continue
 

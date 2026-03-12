@@ -1,28 +1,27 @@
 # scripts/run_fusion.py
-
 import os
 import random
 import numpy as np
 import json
-from sklearn.metrics.pairwise import cosine_similarity
+from tqdm import tqdm
 
-from utils.metrics import compute_open_set_metrics
+from utils.metrics import compute_map, compute_ndcg
 from utils.split import build_class_file_dict, build_open_set_split
 from utils.features import load_feature
-from utils.scoring import score_topk
+from configs.exp_config import BATCH_SIZE
 
-# ------------------------ 0️⃣ 固定随机种子 ------------------------
+# ------------------------ 固定随机种子 ------------------------
 SEED = 0
 random.seed(SEED)
 np.random.seed(SEED)
 
-# ------------------------ 1️⃣ 路径配置 ------------------------
+# ------------------------ 路径配置 ------------------------
 rgb_root = r"D:/1Ahaha/AA3d/output_224_clip_feat"
-depth_root = r"D:/1Ahaha/AA3d/output_224_clip_feat_depth"
+depth_root = r"D:/1Ahaha/AA3d/output_feat_depth_maps"
 save_dir = os.path.join("results", "fusion")
 os.makedirs(save_dir, exist_ok=True)
 
-# ------------------------ 2️⃣ 构建公共文件列表 ------------------------
+# ------------------------ 构建公共文件列表 ------------------------
 def build_common_class_files(rgb_root, depth_root):
     rgb_dict = {cls: [os.path.basename(f) for f in files] 
                 for cls, files in build_class_file_dict(rgb_root).items()}
@@ -39,63 +38,69 @@ def build_common_class_files(rgb_root, depth_root):
 
 class_to_files = build_common_class_files(rgb_root, depth_root)
 
-# ------------------------ 3️⃣ Open-set split ------------------------
+# ------------------------ Open-set split ------------------------
 gallery_file_list, query_file_list, query_is_known, KNOWN_CLASSES, UNKNOWN_CLASSES = build_open_set_split(
     class_to_files, known_num=40, unknown_num=10, gallery_ratio=0.7, seed=SEED
 )
-
 query_is_known = np.array(query_is_known)
 
 print("Known classes:", KNOWN_CLASSES)
 print("Unknown classes:", UNKNOWN_CLASSES)
 print("Gallery size:", len(gallery_file_list))
 print("Query size:", len(query_file_list))
-print("Known queries:", query_is_known.sum(), "Unknown queries:", (query_is_known==0).sum())
 
-# ------------------------ 4️⃣ 特征融合函数 ------------------------
-def fuse_feature(rgb_feat, depth_feat, alpha=0.3):
+# ------------------------ 特征融合函数 ------------------------
+def fuse_feature(rgb_feat, depth_feat, alpha=0.5):
     fused = alpha * rgb_feat + (1 - alpha) * depth_feat
     norm = np.linalg.norm(fused)
     if norm > 0:
         fused = fused / norm
     return fused
 
-# ------------------------ 5️⃣ 加载融合特征 ------------------------
-def load_feats(file_list, alpha=0.3):
+def load_feats(file_list, alpha=0.5):
     feats = []
+    labels = []
     for cls, fname in file_list:
         rgb_feat = load_feature(os.path.join(rgb_root, cls, fname), multi_view=False)
-        depth_feat = load_feature(os.path.join(depth_root, cls, fname), multi_view=False)  # ✅ 改成 False
+        depth_feat = load_feature(os.path.join(depth_root, cls, fname), multi_view=False)
         feats.append(fuse_feature(rgb_feat, depth_feat, alpha))
-    return np.stack(feats)
+        labels.append(cls)
+    return np.stack(feats), np.array(labels)
 
-gallery_feats = load_feats(gallery_file_list, alpha=0.3)
-query_feats = load_feats(query_file_list, alpha=0.3)
+gallery_feats, gallery_labels = load_feats(gallery_file_list, alpha=0.5)
+query_feats, query_labels = load_feats(query_file_list, alpha=0.5)
 
-# ------------------------ 6️⃣ 计算相似度 ------------------------
-sim_to_gallery = cosine_similarity(query_feats, gallery_feats)
+# ------------------------ 过滤 unknown queries ------------------------
+query_is_known = np.array(query_is_known)
+known_mask = query_is_known == 1
+query_feats = query_feats[known_mask]
+query_labels = [query_labels[i] for i in range(len(query_labels)) if known_mask[i]]
 
-# ------------------------ 7️⃣ 计算评分 ------------------------
-scores_max = sim_to_gallery.max(axis=1)
-scores_top5 = score_topk(sim_to_gallery, k=5)
+print("Known queries used for retrieval:", len(query_labels))
 
-# ------------------------ 8️⃣ 计算指标 ------------------------
-methods = [("Max", scores_max), ("Top-5 Mean", scores_top5)]
-metrics_results = []
+# ------------------------ 计算相似度矩阵 ------------------------
+print("\n计算相似度矩阵...")
+sim_to_gallery = np.zeros((query_feats.shape[0], gallery_feats.shape[0]), dtype=np.float32)
+for start in tqdm(range(0, query_feats.shape[0], BATCH_SIZE), desc="Computing similarity"):
+    end = min(start + BATCH_SIZE, query_feats.shape[0])
+    sim_to_gallery[start:end] = query_feats[start:end] @ gallery_feats.T
 
-for name, scores in methods:
-    auroc, fpr95 = compute_open_set_metrics(scores, query_is_known, tpr_target=0.95)
-    metrics_results.append({"method": name, "AUROC": float(auroc), "FPR95": float(fpr95)})
-    print(f"{name:12} AUROC: {auroc:.4f}  FPR95: {fpr95:.4f}")
+# ------------------------ 计算 Retrieval 指标 ------------------------
+mAP = compute_map(sim_to_gallery, gallery_labels, query_labels)
+ndcg = compute_ndcg(sim_to_gallery, gallery_labels, query_labels)
 
-# ------------------------ 9️⃣ 保存 JSON ------------------------
+metrics_results = {"mAP": float(mAP), "NDCG": float(ndcg)}
+
+print("\nFusion α=0.5 Retrieval Results:")
+print(f"mAP  : {mAP:.4f}")
+print(f"NDCG : {ndcg:.4f}")
+
+# ------------------------ 保存 JSON ------------------------
 output = {
     "known_classes": KNOWN_CLASSES,
     "unknown_classes": UNKNOWN_CLASSES,
     "gallery_size": len(gallery_file_list),
     "query_size": len(query_file_list),
-    "known_queries": int(query_is_known.sum()),
-    "unknown_queries": int((query_is_known==0).sum()),
     "metrics": metrics_results
 }
 
@@ -104,4 +109,6 @@ with open(metrics_path, "w") as f:
     json.dump(output, f, indent=4)
 
 print("\nResults saved:", metrics_path)
-print("\n✅ Fusion α=0.3 scoring实验完成！")
+print("\n✅ Fusion α=0.5 scoring实验完成！")
+
+

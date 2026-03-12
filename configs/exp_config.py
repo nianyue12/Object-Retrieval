@@ -5,7 +5,7 @@ PROJECT_DIR = os.path.join(BASE_DIR, "3D-Data-Processing-Toolkit")
 
 # 特征路径
 RGB_FEAT_DIR = os.path.join(BASE_DIR, "output_224_clip_feat")
-DEPTH_FEAT_DIR = os.path.join(BASE_DIR, "output_224_clip_feat_depth")
+DEPTH_FEAT_DIR = os.path.join(BASE_DIR, "output_feat_depth_maps")
 
 # 保存路径
 RESULT_DIR = os.path.join(PROJECT_DIR, "results")
@@ -19,5 +19,5 @@ SEED = 0
 GALLERY_RATIO = 0.7
 KNOWN_NUM = 40
 UNKNOWN_NUM = 10
-ALPHA_FUSION = 0.3
+ALPHA_FUSION = 0.5
 BATCH_SIZE = 512        # Depth / Fusion 分批计算相似度防止爆内存

@@ -6,8 +6,8 @@ from models.clip_encoder import CLIPEncoder
 
 # ===== 配置 =====
 encoder = CLIPEncoder(model_name="ViT-B/32")
-ROOT_IMG_DIR = r"D:/1Ahaha/AA3d/output_224"
-OUT_FEAT_DIR = r"D:/1Ahaha/AA3d/output_224_clip_feat_depth"
+ROOT_IMG_DIR = r"D:/1Ahaha/AA3d/depth_maps"
+OUT_FEAT_DIR = r"D:/1Ahaha/AA3d/output_feat_depth_maps"
 N_VIEWS = 12
 
 os.makedirs(OUT_FEAT_DIR, exist_ok=True)
@@ -16,7 +16,8 @@ def extract_object_feat(obj_dir):
     imgs = []
 
     for i in range(N_VIEWS):
-        img_path = os.path.join(obj_dir, f"depth_{i:04d}.png")
+        img_path = os.path.join(obj_dir, f"depth_{i:02d}.png")  # depth_00.png
+        # img_path = os.path.join(obj_dir, f"depth_{i:04d}.png")
         if not os.path.exists(img_path):
             continue
 
@@ -72,17 +73,30 @@ def extract_object_feat(obj_dir):
 
 
 # ===== 主循环 =====
+# 遍历每个类别目录
 for cat_dir in sorted(os.listdir(ROOT_IMG_DIR)):
-    if not cat_dir.endswith("_multi_view"):
+    full_cat_dir = os.path.join(ROOT_IMG_DIR, cat_dir)
+    if not os.path.isdir(full_cat_dir):
         continue
 
-    cat_name = cat_dir.replace("_multi_view", "")
-    full_cat_dir = os.path.join(ROOT_IMG_DIR, cat_dir)
-
+    cat_name = cat_dir
     cat_feat_dir = os.path.join(OUT_FEAT_DIR, cat_name)
     os.makedirs(cat_feat_dir, exist_ok=True)
 
     print(f"\n📂 Processing category: {cat_name}")
+
+# for cat_dir in sorted(os.listdir(ROOT_IMG_DIR)):
+#     if not cat_dir.endswith("_multi_view"):
+#         continue
+
+#     cat_name = cat_dir.replace("_multi_view", "")
+#     full_cat_dir = os.path.join(ROOT_IMG_DIR, cat_dir)
+
+#     cat_feat_dir = os.path.join(OUT_FEAT_DIR, cat_name)
+#     os.makedirs(cat_feat_dir, exist_ok=True)
+
+#     print(f"\n📂 Processing category: {cat_name}")
+
 
     for obj_id in tqdm(os.listdir(full_cat_dir)):
         obj_dir = os.path.join(full_cat_dir, obj_id)
