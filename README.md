@@ -1,57 +1,72 @@
 # CLIP-based Open-set 3D Object Retrieval
 
-This project implements open-set 3D object retrieval using multi-view RGB images and depth maps rendered from 3D models, with a CLIP backbone.
+main experiment protocol:
 
----
+- train on `seen` categories only
+- retrieve on `unseen` categories only
+- evaluate generalized 3D retrieval performance on unseen classes
 
-## Experiments
+## Main Protocol
 
-### 1️⃣ RGB Multi-view CLIP
+- Total categories used: `50`
+- Seen classes: `10`
+- Unseen classes: `40`
+- Seen split: `80% train_seen`, `20% val_seen`
+- Unseen split: `70% gallery_unseen`, `30% query_unseen`
 
-- **Backbone:** CLIP ViT-B/32  
-- **Input:** 12-view RGB images per 3D object, 224 × 224 resolution  
-- **Feature Extraction:**  
-  - Each view encoded independently via CLIP image encoder  
-  - View-level features aggregated using mean pooling (`multi_view=False` in scripts)  
-- **Evaluation:**  
-  - Open-set 3D object retrieval  
-  - Metrics: AUROC, FPR@95TPR  
+The fixed protocol file is generated at:
 
----
+- `configs/splits/shapenet_seen10_unseen40_seed0.json`
 
-### 2️⃣ Depth Multi-view CLIP
+## Main Experiments
 
-- **Input:** 12-view rendered depth maps aligned with RGB cameras, converted to 3-channel images  
-- **Feature Extraction:**  
-  - Same CLIP image encoder as RGB  
-  - Aggregated using mean pooling   
-- **Evaluation:**  
-  - Open-set 3D object retrieval  
-  - Metrics: AUROC, FPR@95TPR  
+### 1. RGB-CLIP zero-shot unseen retrieval
 
----
+- Input: 12-view RGB images per 3D object
+- Encoder: CLIP `ViT-B/32`
+- Evaluation: `query_unseen -> gallery_unseen`
+- Metrics: `mAP`, `NDCG`, `ANMRR`
 
-### 3️⃣ RGB + Depth Feature Fusion
+### 2. Depth-CLIP zero-shot unseen retrieval
 
-- **Fusion Method:** Weighted sum of RGB and Depth features:  
+- Input: point-cloud-derived depth maps
+- Encoder: CLIP `ViT-B/32`
+- Evaluation: `query_unseen -> gallery_unseen`
+- Metrics: `mAP`, `NDCG`, `ANMRR`
 
-  $$fused = \alpha \cdot rgb\_feat + (1 - \alpha) \cdot depth\_feat$$
+### 3. RGB + Depth Fusion zero-shot unseen retrieval
 
-- **Feature Settings:**  
-  - RGB feature: `multi_view=False`  
-  - Depth feature: `multi_view=False` 
-- **Evaluation:**  
-  - Same open-set retrieval metrics  
-  - Fusion weight tested: e.g., $\alpha = 0.3$
+- Fusion: `fused = alpha * rgb_feat + (1 - alpha) * depth_feat`
+- Default fusion weight: `alpha = 0.5`
+- Evaluation: `query_unseen -> gallery_unseen`
+- Metrics: `mAP`, `NDCG`, `ANMRR`
 
----
+## Current Main Results
 
-## Open-set Retrieval Protocol
+| Method | mAP | NDCG | ANMRR |
+| --- | ---: | ---: | ---: |
+| RGB-CLIP | 0.5485 | 0.8770 | 0.3061 |
+| Depth-CLIP | 0.4723 | 0.8455 | 0.3776 |
+| RGB+Depth Fusion | 0.5673 | 0.8832 | 0.2904 |
 
-- **Total categories:** 50  
-- **Known (seen) classes:** 40  
-- **Unknown (unseen) classes:** 10  
+Result files:
 
-- **Gallery:** 70% of samples from known classes only  
-- **Queries:** Remaining 30% of known class samples + all unknown class samples  
-- **Open-set score:** Maximum cosine similarity to gallery
+- `results/unseen_retrieval/rgb_zero_shot.json`
+- `results/unseen_retrieval/depth_zero_shot.json`
+- `results/unseen_retrieval/fusion_zero_shot_alpha0p50.json`
+
+## Run
+
+Build the fixed protocol:
+
+```bash
+python scripts/build_seen_unseen_protocol.py
+```
+
+Run unseen retrieval:
+
+```bash
+python scripts/run_unseen_retrieval.py --mode rgb
+python scripts/run_unseen_retrieval.py --mode depth
+python scripts/run_unseen_retrieval.py --mode fusion
+```
