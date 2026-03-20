@@ -1,9 +1,7 @@
-# models/clip_encoder.py
-
-import torch
 import clip
-from PIL import Image
 import numpy as np
+import torch
+from PIL import Image
 
 
 class CLIPEncoder:
@@ -23,13 +21,19 @@ class CLIPEncoder:
         feat = feat / feat.norm(dim=-1, keepdim=True)
         return feat.squeeze(0).cpu().numpy()
 
-    def encode_multi_view(self, imgs):
+    def encode_multi_view(self, imgs, aggregate=True):
         """
         imgs: list[PIL.Image]
-        return: (512,) numpy feature (mean pooled)
+        return:
+        - aggregate=True: (512,) numpy feature
+        - aggregate=False: (V, 512) numpy feature
         """
-        feats = [self.encode_image(img) for img in imgs]  # (V,512)
-        feats = np.stack(feats)                           # 堆叠成 (V,512)
-        fused_feat = feats.mean(axis=0)                   # 多视图平均
-        fused_feat = fused_feat / np.linalg.norm(fused_feat)  # 最终归一化
+        feats = [self.encode_image(img) for img in imgs]
+        feats = np.stack(feats).astype(np.float32)
+
+        if not aggregate:
+            return feats
+
+        fused_feat = feats.mean(axis=0)
+        fused_feat = fused_feat / np.linalg.norm(fused_feat)
         return fused_feat
