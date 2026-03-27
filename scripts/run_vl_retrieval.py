@@ -23,7 +23,12 @@ from configs.exp_config import (
 from utils.features import load_feature
 from utils.metrics import evaluate_retrieval, format_metric_report
 from utils.protocol import get_split_items, load_protocol
-from utils.semantic import PROMPT_TEMPLATES, build_text_prototypes
+from utils.semantic import (
+    PROMPT_TEMPLATES,
+    build_conditional_semantic_branch,
+    build_text_prototypes,
+    load_cocoop_prompt_components,
+)
 
 
 def parse_args():
@@ -36,7 +41,31 @@ def parse_args():
     parser.add_argument("--rgb_feat_root", type=str, default=RGB_FEAT_DIR)
     parser.add_argument("--depth_feat_root", type=str, default=DEPTH_FEAT_DIR)
     parser.add_argument("--clip_model", type=str, default="ViT-B/32")
+    parser.add_argument(
+        "--prompt_mode",
+        choices=["fixed", "coop", "cocoop"],
+        default="fixed",
+        help="Text prototype construction mode. Use learned modes with --prompt_ckpt.",
+    )
+    parser.add_argument(
+        "--prompt_ckpt",
+        type=str,
+        default="",
+        help="Checkpoint path produced by train_prompt_coop.py.",
+    )
     parser.add_argument("--batch_size", type=int, default=BATCH_SIZE)
+    parser.add_argument(
+        "--prompt_batch_size",
+        type=int,
+        default=32,
+        help="Batch size for dynamic prompt inference. Only used by CoCoOp.",
+    )
+    parser.add_argument(
+        "--prompt_chunk_size",
+        type=int,
+        default=128,
+        help="How many flattened prompts to encode at once inside CoCoOp text inference.",
+    )
     parser.add_argument("--temperature", type=float, default=0.07)
     parser.add_argument(
         "--text_scope",
@@ -306,12 +335,16 @@ def build_default_save_name(args) -> str:
     parts = [
         "vl",
         args.mode,
+    ]
+    if args.prompt_mode != "fixed":
+        parts.append(args.prompt_mode)
+    parts.extend([
         args.text_scope,
         args.semantic_fusion,
         args.semantic_similarity,
         args.combine_strategy,
         f"sw{float_tag(args.semantic_weight)}",
-    ]
+    ])
     if args.mode == "fusion":
         parts.append(f"a{float_tag(args.alpha)}")
     if args.combine_strategy != "global_blend":
@@ -323,16 +356,13 @@ def build_default_save_name(args) -> str:
 
 def main():
     args = parse_args()
+    if args.prompt_mode in {"coop", "cocoop"} and not args.prompt_ckpt:
+        raise ValueError(
+            "--prompt_ckpt is required when --prompt_mode coop or cocoop is used."
+        )
+
     protocol = load_protocol(args.protocol)
     text_classes = resolve_text_classes(protocol, args.text_scope)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    text_prototypes = build_text_prototypes(
-        text_classes,
-        clip_model=args.clip_model,
-        device=device,
-        templates=PROMPT_TEMPLATES,
-    ).astype(np.float32)
 
     gallery_rgb, gallery_depth, gallery_labels = load_split_rgb_depth(
         protocol,
@@ -360,47 +390,88 @@ def main():
         args.alpha,
     )
 
-    gallery_rgb_sem = build_semantic_branch(
-        gallery_rgb,
-        text_prototypes,
-        args.temperature,
-    )
-    gallery_depth_sem = build_semantic_branch(
-        gallery_depth,
-        text_prototypes,
-        args.temperature,
-    )
-    query_rgb_sem = build_semantic_branch(
-        query_rgb,
-        text_prototypes,
-        args.temperature,
-    )
-    query_depth_sem = build_semantic_branch(
-        query_depth,
-        text_prototypes,
-        args.temperature,
-    )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if args.prompt_mode == "cocoop":
+        model, prompt_learner, text_encoder, _ = load_cocoop_prompt_components(
+            text_classes,
+            clip_model=args.clip_model,
+            device=device,
+            prompt_checkpoint=args.prompt_ckpt,
+        )
+        gallery_semantic = build_conditional_semantic_branch(
+            gallery_visual,
+            model,
+            prompt_learner,
+            text_encoder,
+            temperature=args.temperature,
+            batch_size=args.prompt_batch_size,
+            prompt_chunk_size=args.prompt_chunk_size,
+            desc="Building gallery semantic branch",
+        )
+        query_semantic = build_conditional_semantic_branch(
+            query_visual,
+            model,
+            prompt_learner,
+            text_encoder,
+            temperature=args.temperature,
+            batch_size=args.prompt_batch_size,
+            prompt_chunk_size=args.prompt_chunk_size,
+            desc="Building query semantic branch",
+        )
+    else:
+        text_prototypes = build_text_prototypes(
+            text_classes,
+            clip_model=args.clip_model,
+            device=device,
+            templates=PROMPT_TEMPLATES,
+            prompt_checkpoint=args.prompt_ckpt or None,
+        ).astype(np.float32)
 
-    gallery_semantic = fuse_semantic_branches(
-        gallery_rgb_sem,
-        gallery_depth_sem,
-        args.mode,
-        args.alpha,
-        args.semantic_fusion,
-        text_prototypes,
-    )
-    query_semantic = fuse_semantic_branches(
-        query_rgb_sem,
-        query_depth_sem,
-        args.mode,
-        args.alpha,
-        args.semantic_fusion,
-        text_prototypes,
-    )
+        gallery_rgb_sem = build_semantic_branch(
+            gallery_rgb,
+            text_prototypes,
+            args.temperature,
+        )
+        gallery_depth_sem = build_semantic_branch(
+            gallery_depth,
+            text_prototypes,
+            args.temperature,
+        )
+        query_rgb_sem = build_semantic_branch(
+            query_rgb,
+            text_prototypes,
+            args.temperature,
+        )
+        query_depth_sem = build_semantic_branch(
+            query_depth,
+            text_prototypes,
+            args.temperature,
+        )
+
+        gallery_semantic = fuse_semantic_branches(
+            gallery_rgb_sem,
+            gallery_depth_sem,
+            args.mode,
+            args.alpha,
+            args.semantic_fusion,
+            text_prototypes,
+        )
+        query_semantic = fuse_semantic_branches(
+            query_rgb_sem,
+            query_depth_sem,
+            args.mode,
+            args.alpha,
+            args.semantic_fusion,
+            text_prototypes,
+        )
 
     print(f"Seen classes used for training protocol: {protocol['seen_classes']}")
     print(f"Unseen classes used for retrieval: {protocol['unseen_classes']}")
     print(f"Text bank scope: {args.text_scope} ({len(text_classes)} classes)")
+    print(f"Prompt mode: {args.prompt_mode}")
+    if args.prompt_mode == "cocoop":
+        print(f"Prompt batch size: {args.prompt_batch_size}")
+        print(f"Prompt chunk size: {args.prompt_chunk_size}")
     print(f"Gallery size: {gallery_visual.shape[0]}")
     print(f"Query size: {query_visual.shape[0]}")
 
@@ -442,6 +513,8 @@ def main():
         "mode": args.mode,
         "protocol_path": args.protocol,
         "clip_model": args.clip_model,
+        "prompt_mode": args.prompt_mode,
+        "prompt_ckpt": args.prompt_ckpt,
         "seen_classes": protocol["seen_classes"],
         "unseen_classes": protocol["unseen_classes"],
         "text_classes": text_classes,
@@ -449,6 +522,8 @@ def main():
         "query_size": int(query_visual.shape[0]),
         "alpha_fusion": float(args.alpha),
         "temperature": float(args.temperature),
+        "prompt_batch_size": int(args.prompt_batch_size),
+        "prompt_chunk_size": int(args.prompt_chunk_size),
         "text_scope": args.text_scope,
         "semantic_fusion": args.semantic_fusion,
         "semantic_similarity": args.semantic_similarity,

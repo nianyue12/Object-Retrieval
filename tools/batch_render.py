@@ -100,15 +100,30 @@ def render_category(category):
         
         # 跳过已渲染的模型
         if os.path.exists(out_dir):
-            rgb_files = [f for f in os.listdir(out_dir)
-                         if f.startswith("rgb_") and f.endswith(".png")]
+            rgb_files = [
+                f for f in os.listdir(out_dir)
+                if f.startswith("rgb_") and f.endswith(".png")
+            ]
             cam_param_file = os.path.join(out_dir, "camera_params.npz")
+            depth_png_files = [
+                f for f in os.listdir(out_dir)
+                if f.startswith("depth_") and f.endswith(".png")
+            ]
+            depth_npy_files = [
+                f for f in os.listdir(out_dir)
+                if f.startswith("depth_") and f.endswith(".npy")
+            ]
 
-            depth_files = [f for f in os.listdir(out_dir) if f.startswith("depth_") and f.endswith(".npy")]
+            has_complete_depth = (
+                len(depth_png_files) >= 12 or len(depth_npy_files) >= 12
+            )
 
-            if len(rgb_files) >= 12 and len(depth_files) >= 12 and os.path.exists(cam_param_file):
-
-                print(f"[{idx+1}/{total_models}] 已渲染（含相机参数），跳过：{model_name}")
+            if (
+                len(rgb_files) >= 12
+                and has_complete_depth
+                and os.path.exists(cam_param_file)
+            ):
+                print(f"[{idx+1}/{total_models}] 已渲染（含深度图和相机参数），跳过：{model_name}")
                 success_count += 1
                 continue
 

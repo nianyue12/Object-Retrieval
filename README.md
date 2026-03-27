@@ -10,6 +10,7 @@ Main pipeline:
 - extract pooled CLIP features for RGB views and depth maps
 - evaluate unseen retrieval under a fixed `seen/unseen` protocol
 - run zero-training visual-language retrieval on top of cached RGB-depth features
+- optionally train CoOp or CoCoOp prompts on seen classes and reuse them for unseen retrieval
 
 ## Main Protocol
 
@@ -55,6 +56,20 @@ Fixed protocol file:
 - Recommended default: `fusion + unseen text bank + prob similarity + global blend + semantic_weight=0.25`
 - Metrics: `mAP`, `NDCG@100`, `ANMRR`, `Recall@100`
 
+### 5. Visual-Language Retrieval + CoOp
+
+- Visual branch: cached RGB+Depth fusion CLIP features
+- Prompt tuning: shared CoOp prompt learned on `train_seen`
+- Evaluation: `query_unseen -> gallery_unseen`
+- Metrics: `mAP`, `NDCG@100`, `ANMRR`, `Recall@100`
+
+### 6. Visual-Language Retrieval + CoCoOp
+
+- Visual branch: cached RGB+Depth fusion CLIP features
+- Prompt tuning: conditional CoCoOp prompt learned on `train_seen`
+- Evaluation: `query_unseen -> gallery_unseen`
+- Metrics: `mAP`, `NDCG@100`, `ANMRR`, `Recall@100`
+
 ## Main Metric Style
 
 - Main tables in this project now use the `HGM2R-style` evaluator.
@@ -68,7 +83,9 @@ Fixed protocol file:
 | RGB-CLIP | 0.5512 | 0.7582 | 0.4577 | 0.2294 |
 | Depth-CLIP | 0.4762 | 0.6896 | 0.5284 | 0.1805 |
 | RGB+Depth Fusion | 0.5701 | 0.7709 | 0.4418 | 0.2363 |
-| VL Retrieval | 0.6073 | 0.7837 | 0.4086 | 0.2476 |
+| VL Retrieval (fixed prompt) | 0.6073 | 0.7837 | 0.4086 | 0.2476 |
+| VL Retrieval + CoOp | 0.6376 | 0.7941 | 0.3809 | 0.2554 |
+| VL Retrieval + CoCoOp | 0.6202 | 0.7877 | 0.3970 | 0.2495 |
 
 Result files:
 
@@ -76,6 +93,8 @@ Result files:
 - `results/unseen_retrieval/depth_zero_shot_both.json`
 - `results/unseen_retrieval/fusion_zero_shot_alpha0p50_both.json`
 - `results/unseen_retrieval/vl_fusion_unseen_confidence_prob_global_blend_sw0p25_a0p50_hgm2r.json`
+- `results/unseen_retrieval/vl_fusion_coop_ctx8_random_hgm2r.json`
+- `results/unseen_retrieval/vl_fusion_cocoop_ctx8_random_seed0_safe_hgm2r.json`
 
 Compared with the zero-shot RGB+Depth baseline, VL Retrieval improves:
 
@@ -83,6 +102,48 @@ Compared with the zero-shot RGB+Depth baseline, VL Retrieval improves:
 - `NDCG@100`: `+0.0128`
 - `ANMRR`: `-0.0332`
 - `Recall@100`: `+0.0113`
+
+Compared with fixed-prompt VL Retrieval, prompt tuning improves:
+
+- `CoOp`: `mAP +0.0303`, `NDCG@100 +0.0104`, `ANMRR -0.0278`, `Recall@100 +0.0079`
+- `CoCoOp`: `mAP +0.0130`, `NDCG@100 +0.0040`, `ANMRR -0.0117`, `Recall@100 +0.0020`
+
+## Project Layout
+
+- `tools/`: preprocessing utilities, including multi-view rendering, point-cloud sampling, and point-cloud-to-depth projection.
+- `scripts/`: experiment entry points for feature extraction, split construction, retrieval evaluation, and prompt tuning.
+- `models/`: lightweight CLIP wrappers plus CoOp/CoCoOp prompt learner modules.
+- `utils/`: shared helpers for CLIP loading, protocol handling, retrieval metrics, and semantic reranking.
+- `configs/`: default paths and saved protocol splits.
+- `results/`: experiment outputs. Direct script outputs currently go to `results/unseen_retrieval` and `results/prompt_tuning`.
+- `datasets/`: reserved for dataset notes, manifests, and benchmark adapters. Raw datasets are not stored in this repository.
+- `CLIP/`: vendored OpenAI CLIP source used by this project.
+
+## External Data Layout
+
+This repository mainly stores code. Large datasets and intermediate artifacts are expected to live outside the repo under the current `D:/1Ahaha/AA3d` workspace.
+
+Current external roots used by the project:
+
+- ShapeNet raw models: `D:/1Ahaha/AA3d/ShapeNet`
+- Rendered RGB views: `D:/1Ahaha/AA3d/output_224`
+- Sampled point clouds: `D:/1Ahaha/AA3d/ShapeNet_PointClouds`
+- Point-cloud-derived depth maps: `D:/1Ahaha/AA3d/depth_maps`
+- RGB CLIP features: `D:/1Ahaha/AA3d/output_224_clip_feat`
+- Depth CLIP features: `D:/1Ahaha/AA3d/output_feat_depth_maps`
+
+## Result Organization
+
+Current script outputs remain unchanged for compatibility:
+
+- `results/unseen_retrieval/`: retrieval JSON outputs written by evaluation scripts
+- `results/prompt_tuning/`: CoOp and CoCoOp checkpoints plus training summaries
+
+Reserved folders for manual curation:
+
+- `results/main/`: final tables or selected runs for the thesis
+- `results/ablations/`: controlled comparison runs
+- `results/debug/`: temporary or throwaway analysis outputs
 
 ## Run
 
@@ -121,6 +182,30 @@ Run zero-training visual-language retrieval:
 python scripts/run_vl_retrieval.py --mode fusion --metric_style hgm2r
 ```
 
+Train a first-stage shared CoOp prompt on seen classes:
+
+```bash
+python scripts/train_prompt_coop.py --mode fusion --epochs 20 --n_ctx 8 --ctx_init " " --save_name coop_fusion_nctx8_random_seed0.pt
+```
+
+Run visual-language retrieval with the learned CoOp prompt:
+
+```bash
+python scripts/run_vl_retrieval.py --mode fusion --prompt_mode coop --prompt_ckpt results/prompt_tuning/coop_fusion_nctx8_random_seed0.pt --metric_style hgm2r --save_name vl_fusion_coop_ctx8_random_hgm2r.json
+```
+
+Train a first-stage CoCoOp prompt with cached fusion features:
+
+```bash
+python scripts/train_prompt_cocoop.py --mode fusion --epochs 20 --n_ctx 8 --ctx_init " " --meta_hidden_dim 64 --batch_size 16 --prompt_chunk_size 64 --save_name cocoop_fusion_nctx8_random_seed0_safe.pt
+```
+
+Run visual-language retrieval with the learned CoCoOp prompt:
+
+```bash
+python scripts/run_vl_retrieval.py --mode fusion --prompt_mode cocoop --prompt_ckpt results/prompt_tuning/cocoop_fusion_nctx8_random_seed0_safe.pt --prompt_batch_size 4 --prompt_chunk_size 8 --metric_style hgm2r --save_name vl_fusion_cocoop_ctx8_random_seed0_safe_hgm2r.json
+```
+
 If you need both the main `HGM2R-style` metrics and the older compatibility metrics in the same file, use:
 
 ```bash
@@ -134,3 +219,5 @@ Key outputs:
 - `results/unseen_retrieval/depth_zero_shot_hgm2r.json` or `depth_zero_shot_both.json`
 - `results/unseen_retrieval/fusion_zero_shot_alpha0p50_hgm2r.json` or `fusion_zero_shot_alpha0p50_both.json`
 - `results/unseen_retrieval/vl_fusion_unseen_confidence_prob_global_blend_sw0p25_a0p50_hgm2r.json`
+- `results/unseen_retrieval/vl_fusion_coop_ctx8_random_hgm2r.json`
+- `results/unseen_retrieval/vl_fusion_cocoop_ctx8_random_seed0_safe_hgm2r.json`

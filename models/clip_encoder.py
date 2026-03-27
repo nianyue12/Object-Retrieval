@@ -1,14 +1,17 @@
-import clip
 import numpy as np
 import torch
 from PIL import Image
+
+from utils.clip_utils import load_clip_model
 
 
 class CLIPEncoder:
     def __init__(self, model_name="ViT-B/32", device=None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.model, self.preprocess = clip.load(model_name, device=self.device)
-        self.model.eval()
+        _, self.model, self.preprocess = load_clip_model(
+            model_name,
+            device=self.device,
+        )
 
     @torch.no_grad()
     def encode_image(self, img: Image.Image):
