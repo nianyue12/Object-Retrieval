@@ -1,0 +1,82 @@
+{
+    "mode": "rgb",
+    "protocol_path": "D:/1Ahaha/AA3d\\3D-Data-Processing-Toolkit\\configs\\splits\\shapenet_seen10_unseen40_seed0.json",
+    "seen_classes": [
+        "laptop",
+        "cabinet",
+        "bus",
+        "rocket",
+        "basket",
+        "lamp",
+        "pot",
+        "microphone",
+        "file",
+        "bed"
+    ],
+    "unseen_classes": [
+        "motorcycle",
+        "piano",
+        "knife",
+        "mug",
+        "dishwasher",
+        "bookshelf",
+        "cap",
+        "telephone",
+        "vessel",
+        "loudspeaker",
+        "car",
+        "mailbox",
+        "microwave",
+        "chair",
+        "skateboard",
+        "earphone",
+        "sofa",
+        "bottle",
+        "can",
+        "jar",
+        "bench",
+        "clock",
+        "rifle",
+        "washer",
+        "bag",
+        "camera",
+        "pistol",
+        "helmet",
+        "birdhouse",
+        "guitar",
+        "pillow",
+        "faucet",
+        "display",
+        "bowl",
+        "printer",
+        "tower",
+        "bathtub",
+        "ashcan",
+        "train",
+        "stove"
+    ],
+    "gallery_size": 19312,
+    "query_size": 8304,
+    "alpha_fusion": 0.5,
+    "metric_style": "both",
+    "primary_metric_style": "hgm2r",
+    "metrics": {
+        "mAP": 0.5512188261396358,
+        "NDCG@100": 0.7582106402122406,
+        "ANMRR": 0.4576781370803808,
+        "Recall@100": 0.22944689860434603
+    },
+    "metrics_by_style": {
+        "legacy": {
+            "mAP": 0.5485434799776372,
+            "NDCG": 0.8769743831798367,
+            "ANMRR": 0.3061244074734607
+        },
+        "hgm2r": {
+            "mAP": 0.5512188261396358,
+            "NDCG@100": 0.7582106402122406,
+            "ANMRR": 0.4576781370803808,
+            "Recall@100": 0.22944689860434603
+        }
+    }
+}

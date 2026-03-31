@@ -111,7 +111,7 @@ Compared with fixed-prompt VL Retrieval, prompt tuning improves:
 ## Project Layout
 
 - `tools/`: preprocessing utilities, including multi-view rendering, point-cloud sampling, and point-cloud-to-depth projection.
-- `scripts/`: experiment entry points for feature extraction, split construction, retrieval evaluation, and prompt tuning.
+- `scripts/`: experiment entry points grouped into `scripts/main`, `scripts/prompt`, `scripts/os_mn40_core`, and `scripts/lora`.
 - `models/`: lightweight CLIP wrappers plus CoOp/CoCoOp prompt learner modules.
 - `utils/`: shared helpers for CLIP loading, protocol handling, retrieval metrics, and semantic reranking.
 - `configs/`: default paths and saved protocol splits.
@@ -158,59 +158,59 @@ python tools/pc_to_depth.py
 Extract CLIP features:
 
 ```bash
-python scripts/extract_rgb_features.py
-python scripts/extract_depth_features.py
+python scripts/main/extract_rgb_features.py
+python scripts/main/extract_depth_features.py
 ```
 
 Build the fixed protocol:
 
 ```bash
-python scripts/build_seen_unseen_protocol.py
+python scripts/main/build_seen_unseen_protocol.py
 ```
 
 Run zero-shot unseen retrieval:
 
 ```bash
-python scripts/run_unseen_retrieval.py --mode rgb --metric_style hgm2r
-python scripts/run_unseen_retrieval.py --mode depth --metric_style hgm2r
-python scripts/run_unseen_retrieval.py --mode fusion --metric_style hgm2r
+python scripts/main/run_unseen_retrieval.py --mode rgb --metric_style hgm2r
+python scripts/main/run_unseen_retrieval.py --mode depth --metric_style hgm2r
+python scripts/main/run_unseen_retrieval.py --mode fusion --metric_style hgm2r
 ```
 
 Run zero-training visual-language retrieval:
 
 ```bash
-python scripts/run_vl_retrieval.py --mode fusion --metric_style hgm2r
+python scripts/main/run_vl_retrieval.py --mode fusion --metric_style hgm2r
 ```
 
 Train a first-stage shared CoOp prompt on seen classes:
 
 ```bash
-python scripts/train_prompt_coop.py --mode fusion --epochs 20 --n_ctx 8 --ctx_init " " --save_name coop_fusion_nctx8_random_seed0.pt
+python scripts/prompt/train_prompt_coop.py --mode fusion --epochs 20 --n_ctx 8 --ctx_init " " --save_name coop_fusion_nctx8_random_seed0.pt
 ```
 
 Run visual-language retrieval with the learned CoOp prompt:
 
 ```bash
-python scripts/run_vl_retrieval.py --mode fusion --prompt_mode coop --prompt_ckpt results/prompt_tuning/coop_fusion_nctx8_random_seed0.pt --metric_style hgm2r --save_name vl_fusion_coop_ctx8_random_hgm2r.json
+python scripts/main/run_vl_retrieval.py --mode fusion --prompt_mode coop --prompt_ckpt results/prompt_tuning/coop_fusion_nctx8_random_seed0.pt --metric_style hgm2r --save_name vl_fusion_coop_ctx8_random_hgm2r.json
 ```
 
 Train a first-stage CoCoOp prompt with cached fusion features:
 
 ```bash
-python scripts/train_prompt_cocoop.py --mode fusion --epochs 20 --n_ctx 8 --ctx_init " " --meta_hidden_dim 64 --batch_size 16 --prompt_chunk_size 64 --save_name cocoop_fusion_nctx8_random_seed0_safe.pt
+python scripts/prompt/train_prompt_cocoop.py --mode fusion --epochs 20 --n_ctx 8 --ctx_init " " --meta_hidden_dim 64 --batch_size 16 --prompt_chunk_size 64 --save_name cocoop_fusion_nctx8_random_seed0_safe.pt
 ```
 
 Run visual-language retrieval with the learned CoCoOp prompt:
 
 ```bash
-python scripts/run_vl_retrieval.py --mode fusion --prompt_mode cocoop --prompt_ckpt results/prompt_tuning/cocoop_fusion_nctx8_random_seed0_safe.pt --prompt_batch_size 4 --prompt_chunk_size 8 --metric_style hgm2r --save_name vl_fusion_cocoop_ctx8_random_seed0_safe_hgm2r.json
+python scripts/main/run_vl_retrieval.py --mode fusion --prompt_mode cocoop --prompt_ckpt results/prompt_tuning/cocoop_fusion_nctx8_random_seed0_safe.pt --prompt_batch_size 4 --prompt_chunk_size 8 --metric_style hgm2r --save_name vl_fusion_cocoop_ctx8_random_seed0_safe_hgm2r.json
 ```
 
 If you need both the main `HGM2R-style` metrics and the older compatibility metrics in the same file, use:
 
 ```bash
-python scripts/run_unseen_retrieval.py --mode fusion --metric_style both
-python scripts/run_vl_retrieval.py --mode fusion --metric_style both
+python scripts/main/run_unseen_retrieval.py --mode fusion --metric_style both
+python scripts/main/run_vl_retrieval.py --mode fusion --metric_style both
 ```
 
 Key outputs:

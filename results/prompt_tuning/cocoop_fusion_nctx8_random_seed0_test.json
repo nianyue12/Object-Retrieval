@@ -1,0 +1,29 @@
+{
+    "save_path": "D:/1Ahaha/AA3d\\3D-Data-Processing-Toolkit\\results\\prompt_tuning\\cocoop_fusion_nctx8_random_seed0_test.pt",
+    "prompt_mode": "cocoop",
+    "clip_model": "ViT-B/32",
+    "mode": "fusion",
+    "alpha": 0.5,
+    "protocol_path": "D:/1Ahaha/AA3d\\3D-Data-Processing-Toolkit\\configs\\splits\\shapenet_seen10_unseen40_seed0.json",
+    "n_ctx": 8,
+    "ctx_init": " ",
+    "class_token_position": "end",
+    "seed": 0,
+    "meta_hidden_dim": 64,
+    "prompt_chunk_size": 32,
+    "eval_every": 1,
+    "amp_enabled": true,
+    "best_epoch": 1,
+    "best_val_top1": 0.8765652951699463,
+    "train_size": 4456,
+    "val_size": 1118,
+    "history": [
+        {
+            "epoch": 1,
+            "train_loss": 0.472366969102803,
+            "train_top1": 0.8512118491921006,
+            "val_loss": 0.3833406520657548,
+            "val_top1": 0.8765652951699463
+        }
+    ]
+}
