@@ -1,3 +1,11 @@
+"""
+功能：把 ShapeNet 点云批量投影成深度图。
+
+说明：
+    这个脚本会读取点云和相机参数，
+    然后为每个物体生成与渲染视角对应的深度图 PNG。
+"""
+
 import os
 import cv2
 import numpy as np
@@ -15,6 +23,9 @@ Z_FAR = 10.0
 
 # ================= 你的原函数（加少量容错） =================
 def pointcloud_to_depth(points, cam2world, K, img_size=224):
+    """
+    功能：把点云投影到单个相机视角下，生成深度图。
+    """
     # 新增：矩阵不可逆容错
     try:
         world2cam = np.linalg.inv(cam2world)
@@ -57,6 +68,9 @@ def pointcloud_to_depth(points, cam2world, K, img_size=224):
 
 
 def normalize_depth(depth):
+    """
+    功能：把非零深度值归一化到 [0, 1] 区间。
+    """
     mask = depth > 0
     if not np.any(mask):
         return depth
@@ -72,6 +86,9 @@ def normalize_depth(depth):
 
 
 def generate_depth_maps(pc_path, cam_param_path, output_dir):
+    """
+    功能：为单个物体生成一组深度图。
+    """
     # 新增：前置文件存在性检查
     if not os.path.exists(pc_path):
         raise FileNotFoundError(f"Point cloud file not found: {pc_path}")
@@ -99,10 +116,10 @@ def generate_depth_maps(pc_path, cam_param_path, output_dir):
         depth = pointcloud_to_depth(points, cam2world[i], K)
         depth = normalize_depth(depth)
 
-        # 增1：填充空洞（解决星空图）
+        # 填充空洞，减少稀疏投影导致的黑点
         depth = cv2.dilate(depth, np.ones((5,5), np.uint8))
 
-        # 增2：平滑深度图
+        # 做一次平滑，得到更连续的深度图
         depth = cv2.GaussianBlur(depth, (5,5), 0)
 
         # 归一化到 0~255
@@ -115,6 +132,9 @@ def generate_depth_maps(pc_path, cam_param_path, output_dir):
 
 # ================= ShapeNet55 批处理主逻辑 =================
 def batch_process_shapenet55():
+    """
+    功能：批量处理 ShapeNet55 点云，生成整套深度图。
+    """
     # 新增：根目录存在性检查
     for root in [PC_ROOT, CAM_ROOT]:
         if not os.path.exists(root):
@@ -172,4 +192,5 @@ def batch_process_shapenet55():
 
 
 if __name__ == "__main__":
+    # 从点云和相机参数批量生成深度图
     batch_process_shapenet55()

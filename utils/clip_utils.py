@@ -5,11 +5,18 @@ from pathlib import Path
 
 
 def _project_root() -> Path:
+    """返回项目根目录。"""
     return Path(__file__).resolve().parent.parent
 
 
 def get_clip_module():
-    """Load the vendored OpenAI CLIP package shipped with this repo."""
+    """
+    功能：加载仓库内自带的 OpenAI CLIP 包。
+
+    说明：
+        这里优先使用项目里 vendored 的 `CLIP/` 目录，
+        保证训练和推理环境一致。
+    """
     clip_root = _project_root() / "CLIP"
     if clip_root.exists():
         clip_root_str = os.fspath(clip_root)
@@ -23,6 +30,14 @@ def get_clip_module():
 
 
 def load_clip_model(model_name: str, device, force_float: bool = False):
+    """
+    功能：加载指定名称的 CLIP 模型与预处理流程。
+
+    参数：
+        model_name: CLIP 模型名
+        device: 模型加载设备
+        force_float: 是否将模型转换为 float32
+    """
     clip = get_clip_module()
     model, preprocess = clip.load(model_name, device=device)
     model.eval()

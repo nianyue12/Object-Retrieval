@@ -1,3 +1,11 @@
+"""
+功能：在缓存好的 CLIP 特征上训练 CoOp prompt。
+
+说明：
+    这里学习的是一组共享上下文 token，
+    用于提升 seen 类上的文本分类对齐效果。
+"""
+
 import argparse
 import json
 import os
@@ -28,6 +36,7 @@ from utils.protocol import get_split_items, load_protocol
 
 
 def parse_args():
+    """解析 CoOp 训练参数。"""
     parser = argparse.ArgumentParser(
         description="Train a shared CoOp prompt on seen classes using cached CLIP features."
     )
@@ -61,6 +70,7 @@ def parse_args():
 
 
 def set_seed(seed: int) -> None:
+    """固定随机种子。"""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -69,11 +79,13 @@ def set_seed(seed: int) -> None:
 
 
 def normalize_rows(feats: np.ndarray) -> np.ndarray:
+    """对特征矩阵按行做 L2 归一化。"""
     norms = np.linalg.norm(feats, axis=1, keepdims=True)
     return feats / np.clip(norms, 1e-12, None)
 
 
 def resolve_device(device_arg: str) -> torch.device:
+    """根据输入参数选择设备。"""
     if device_arg:
         return torch.device(device_arg)
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -88,6 +100,9 @@ def load_split_features(
     depth_feat_root: str,
     label_to_index: dict,
 ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    功能：读取某个 split 的缓存特征和标签。
+    """
     feats = []
     labels = []
 
@@ -118,6 +133,7 @@ def build_loader(
     shuffle: bool,
     num_workers: int,
 ) -> DataLoader:
+    """把缓存特征包装成 DataLoader。"""
     dataset = TensorDataset(torch.from_numpy(feats), torch.from_numpy(labels))
     return DataLoader(
         dataset,
@@ -133,6 +149,9 @@ def compute_logits(
     prompt_learner: PromptLearner,
     text_encoder: TextEncoder,
 ) -> torch.Tensor:
+    """
+    功能：计算 CoOp prompt 下的分类 logits。
+    """
     prompts = prompt_learner()
     text_features = text_encoder(prompts, prompt_learner.tokenized_prompts)
     text_features = F.normalize(text_features, dim=-1)
@@ -148,6 +167,9 @@ def run_epoch(
     text_encoder: TextEncoder,
     optimizer=None,
 ) -> Tuple[float, float]:
+    """
+    功能：执行一轮 CoOp 训练或验证。
+    """
     is_train = optimizer is not None
     prompt_learner.train(is_train)
     text_encoder.train(is_train)
@@ -181,6 +203,7 @@ def run_epoch(
 
 
 def build_default_save_name(args) -> str:
+    """根据超参数生成默认 checkpoint 名。"""
     ctx_tag = f"nctx{args.n_ctx}"
     if args.ctx_init:
         init_tag = args.ctx_init.lower().replace(" ", "_")
@@ -191,11 +214,13 @@ def build_default_save_name(args) -> str:
 
 
 def save_checkpoint(path: str, checkpoint: dict) -> None:
+    """保存 CoOp checkpoint。"""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save(checkpoint, path)
 
 
 def main():
+    """脚本入口：准备缓存特征、训练 CoOp、保存最优结果。"""
     args = parse_args()
     set_seed(args.seed)
 
@@ -223,6 +248,7 @@ def main():
     )
 
     device = resolve_device(args.device)
+    # 基础 CLIP 冻结，只优化 prompt 上下文参数
     _, clip_model, _ = load_clip_model(
         args.clip_model,
         device=device,
@@ -232,6 +258,7 @@ def main():
     for param in clip_model.parameters():
         param.requires_grad_(False)
 
+    # CoOp 只学习共享上下文 token
     prompt_learner = PromptLearner(
         class_names=seen_classes,
         clip_model=clip_model,

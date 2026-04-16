@@ -1,3 +1,11 @@
+"""
+功能：在缓存好的 RGB / Depth 视图上训练 CLIP 视觉分支的 LoRA 适配器。
+
+说明：
+    训练目标是 seen 类分类，
+    最终保存 LoRA 参数，供后续特征提取或检索脚本使用。
+"""
+
 import argparse
 import json
 import os
@@ -37,6 +45,7 @@ DEFAULT_SAVE_DIR = os.path.join(RESULT_DIR, "lora")
 
 
 def parse_args():
+    """解析训练脚本命令行参数。"""
     parser = argparse.ArgumentParser(
         description="Train a visual LoRA adapter on CLIP for RGB/depth view classification."
     )
@@ -74,6 +83,7 @@ def parse_args():
 
 
 def set_seed(seed: int) -> None:
+    """固定随机种子，保证实验更可复现。"""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -82,12 +92,14 @@ def set_seed(seed: int) -> None:
 
 
 def resolve_device(device_arg: str) -> torch.device:
+    """根据参数或环境自动选择设备。"""
     if device_arg:
         return torch.device(device_arg)
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def make_grad_scaler(use_amp: bool):
+    """创建 AMP 梯度缩放器，兼容不同 PyTorch 版本。"""
     try:
         return torch.amp.GradScaler("cuda", enabled=use_amp)
     except AttributeError:
@@ -95,6 +107,7 @@ def make_grad_scaler(use_amp: bool):
 
 
 def autocast_context(use_amp: bool):
+    """返回自动混合精度上下文。"""
     if not use_amp:
         return nullcontext()
 
@@ -105,10 +118,12 @@ def autocast_context(use_amp: bool):
 
 
 def load_rgb_image(path: str) -> Image.Image:
+    """读取 RGB 图像。"""
     return Image.open(path).convert("RGB")
 
 
 def load_depth_image(path: str) -> Image.Image:
+    """读取深度图并转换成 3 通道 RGB 形式。"""
     depth = Image.open(path)
     depth_array = np.array(depth, dtype=np.float32)
 
@@ -135,6 +150,13 @@ def build_view_samples(
     depth_root: str,
     label_to_index: dict,
 ) -> Tuple[List[Tuple[str, int, str]], dict]:
+    """
+    功能：把协议里的物体样本展开成“单视图训练样本”列表。
+
+    返回：
+        samples: `(image_path, label_id, modality)` 列表
+        stats: 统计信息，方便打印数据规模
+    """
     samples = []
     stats = {
         "objects": 0,
@@ -150,6 +172,7 @@ def build_view_samples(
 
         if mode in {"rgb", "fusion"}:
             rgb_obj_dir = os.path.join(rgb_root, f"{cls}_multi_view", obj_id)
+            # RGB 分支读取多视图渲染图
             for view_idx in range(12):
                 view_path = os.path.join(rgb_obj_dir, f"rgb_{view_idx:04d}.png")
                 if not os.path.exists(view_path):
@@ -160,6 +183,7 @@ def build_view_samples(
 
         if mode in {"depth", "fusion"}:
             depth_obj_dir = os.path.join(depth_root, cls, obj_id)
+            # 深度分支读取深度图
             for view_idx in range(12):
                 view_path = os.path.join(depth_obj_dir, f"depth_{view_idx:02d}.png")
                 if not os.path.exists(view_path):
@@ -175,6 +199,8 @@ def build_view_samples(
 
 
 class ViewDataset(Dataset):
+    """把视图路径列表包装成可供 DataLoader 使用的数据集。"""
+
     def __init__(self, samples: Sequence[Tuple[str, int, str]], preprocess):
         self.samples = list(samples)
         self.preprocess = preprocess
@@ -188,10 +214,12 @@ class ViewDataset(Dataset):
             image = load_rgb_image(image_path)
         else:
             image = load_depth_image(image_path)
+        # 返回预处理后的图像张量和类别标签
         return self.preprocess(image), label
 
 
 def build_loader(dataset: Dataset, batch_size: int, shuffle: bool, num_workers: int):
+    """构建训练或验证用的 DataLoader。"""
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -206,12 +234,16 @@ def build_text_features(
     model,
     device: torch.device,
 ) -> torch.Tensor:
+    """
+    功能：为所有 seen 类构建固定文本原型。
+    """
     clip_module = get_clip_module()
     text_features = []
 
     with torch.no_grad():
         for class_name in class_names:
             readable_name = class_name.replace("_", " ")
+            # 同一类别使用多模板描述，再求平均
             prompts = [
                 template.format(readable_name) for template in PROMPT_TEMPLATES
             ]
@@ -225,6 +257,7 @@ def build_text_features(
 
 
 def compute_logits(images, model, text_features):
+    """计算图像特征与文本原型之间的分类 logits。"""
     image_features = model.encode_image(images)
     image_features = F.normalize(image_features, dim=-1)
     logit_scale = model.logit_scale.exp().clamp(max=100.0)
@@ -241,6 +274,12 @@ def run_epoch(
     scaler=None,
     desc: str = "",
 ):
+    """
+    功能：执行一轮训练或验证。
+
+    说明：
+        optimizer 不为空时走训练模式，否则走验证模式。
+    """
     is_train = optimizer is not None
     model.train(is_train)
     total_loss = 0.0
@@ -280,6 +319,7 @@ def run_epoch(
 
 
 def build_default_save_name(args) -> str:
+    """根据主要超参数生成默认保存名。"""
     block_tag = "-".join(str(idx) for idx in parse_int_list(args.visual_blocks))
     return (
         f"clip_lora_{args.mode}_r{args.rank}_a{int(args.lora_alpha)}"
@@ -288,11 +328,13 @@ def build_default_save_name(args) -> str:
 
 
 def save_checkpoint(path: str, checkpoint: dict) -> None:
+    """保存训练得到的 checkpoint。"""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save(checkpoint, path)
 
 
 def main():
+    """脚本入口：准备数据、训练 LoRA、保存最佳结果。"""
     args = parse_args()
     set_seed(args.seed)
 
@@ -325,6 +367,7 @@ def main():
         raise RuntimeError("No validation views found. Check rgb_root/depth_root and protocol.")
 
     device = resolve_device(args.device)
+    # 先加载基础 CLIP，再把指定模块替换成 LoRA 版本
     _, model, preprocess = load_clip_model(
         args.clip_model,
         device=device,
@@ -341,6 +384,7 @@ def main():
     )
     trainable_param_names = mark_only_lora_trainable(model)
 
+    # 构建 seen 类视图分类数据集
     train_dataset = ViewDataset(train_samples, preprocess=preprocess)
     val_dataset = ViewDataset(val_samples, preprocess=preprocess)
     train_loader = build_loader(
@@ -356,6 +400,7 @@ def main():
         num_workers=args.num_workers,
     )
 
+    # 文本原型在训练过程中固定不变，只计算一次
     text_features = build_text_features(seen_classes, model, device=device)
     text_features = text_features.detach()
 
@@ -386,6 +431,7 @@ def main():
         f"{count_trainable_parameters(model):,} / {count_all_parameters(model):,}"
     )
 
+    # 每轮训练后在 seen 验证集上选最优 checkpoint
     for epoch in range(1, args.epochs + 1):
         train_loss, train_acc = run_epoch(
             train_loader,

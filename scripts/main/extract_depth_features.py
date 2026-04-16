@@ -1,3 +1,12 @@
+"""
+功能：批量提取深度图的 CLIP 多视图特征。
+
+说明：
+    这个脚本会遍历每个物体的 12 张深度图，
+    把深度图转成 3 通道图像后送入 CLIP 编码，
+    最终为每个物体保存一个 `.npy` 融合特征。
+"""
+
 import os
 import sys
 
@@ -19,6 +28,9 @@ N_VIEWS = 12
 os.makedirs(OUT_FEAT_DIR, exist_ok=True)
 
 def extract_object_feat(obj_dir):
+    """
+    功能：提取单个物体的深度多视图特征。
+    """
     imgs = []
 
     for i in range(N_VIEWS):
@@ -79,7 +91,7 @@ def extract_object_feat(obj_dir):
 
 
 # ===== 主循环 =====
-# 遍历每个类别目录
+# 遍历每个类别目录，并为其中的每个物体提取特征
 for cat_dir in sorted(os.listdir(ROOT_IMG_DIR)):
     full_cat_dir = os.path.join(ROOT_IMG_DIR, cat_dir)
     if not os.path.isdir(full_cat_dir):

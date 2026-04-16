@@ -1,3 +1,7 @@
+"""
+功能：根据已有的 RGB / Depth 特征目录，生成 seen / unseen 协议文件。
+"""
+
 import os
 import sys
 
@@ -23,6 +27,8 @@ from utils.protocol import (
 
 
 def main():
+    """脚本入口：构建协议并输出基础统计信息。"""
+    # 先找出 RGB 和深度两边都存在的公共样本
     class_to_items = build_common_class_items(RGB_FEAT_DIR, DEPTH_FEAT_DIR)
     protocol = build_seen_unseen_protocol(
         class_to_items=class_to_items,
@@ -33,6 +39,7 @@ def main():
         seed=SEED,
     )
 
+    # 保存协议文件，供训练和检索脚本复用
     save_protocol(protocol, DEFAULT_PROTOCOL_PATH)
 
     gallery_size = sum(len(v) for v in protocol["gallery_unseen"].values())

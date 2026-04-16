@@ -1,3 +1,7 @@
+"""
+功能：为 OS-MN40-core 数据集提取 RGB / Depth CLIP 特征。
+"""
+
 import argparse
 import os
 import sys
@@ -28,6 +32,7 @@ DEFAULT_DEPTH_OUT = os.path.join(BASE_DIR, "OS_MN40_core_depth_clip_feat")
 
 
 def parse_args():
+    """解析命令行参数。"""
     parser = argparse.ArgumentParser(
         description="Extract CLIP features for OS-MN40-core RGB views or depth maps."
     )
@@ -43,6 +48,7 @@ def parse_args():
 
 
 def resolve_output_root(args) -> str:
+    """根据模态决定默认输出目录。"""
     if args.output_root:
         return args.output_root
     if args.modality == "rgb":
@@ -51,6 +57,12 @@ def resolve_output_root(args) -> str:
 
 
 def build_unique_items(protocol: dict) -> List[Tuple[str, str, str]]:
+    """
+    功能：把协议中的四个 split 合并成唯一物体列表。
+
+    返回：
+        `(class_name, item_name, split_name)` 列表
+    """
     unique = {}
 
     for class_name, items in protocol["train_seen"].items():
@@ -73,6 +85,7 @@ def build_unique_items(protocol: dict) -> List[Tuple[str, str, str]]:
 
 
 def parse_angle(filename: str) -> int:
+    """从 RGB 视图文件名里解析拍摄角度编号。"""
     name = os.path.splitext(filename)[0]
     try:
         return int(name.split("_")[-1])
@@ -81,6 +94,7 @@ def parse_angle(filename: str) -> int:
 
 
 def list_rgb_views(image_dir: str) -> List[str]:
+    """列出并按角度顺序排序 RGB 视图。"""
     view_paths = [
         os.path.join(image_dir, filename)
         for filename in os.listdir(image_dir)
@@ -91,6 +105,7 @@ def list_rgb_views(image_dir: str) -> List[str]:
 
 
 def list_depth_views(depth_dir: str) -> List[str]:
+    """列出并排序深度图视图。"""
     view_paths = [
         os.path.join(depth_dir, filename)
         for filename in os.listdir(depth_dir)
@@ -101,6 +116,7 @@ def list_depth_views(depth_dir: str) -> List[str]:
 
 
 def load_depth_rgb(path: str) -> Image.Image:
+    """把深度图转换成 CLIP 可处理的 3 通道图像。"""
     depth = Image.open(path)
     depth_array = np.array(depth, dtype=np.float32)
 
@@ -120,6 +136,7 @@ def load_depth_rgb(path: str) -> Image.Image:
 
 
 def resolve_rgb_dir(data_root: str, split_name: str, class_name: str, object_id: str) -> str:
+    """根据 split 名称解析 RGB 图像目录。"""
     if split_name in {"train_seen", "val_seen"}:
         return os.path.join(data_root, "train", class_name, object_id, "image")
     if split_name == "gallery_unseen":
@@ -130,6 +147,7 @@ def resolve_rgb_dir(data_root: str, split_name: str, class_name: str, object_id:
 
 
 def resolve_depth_dir(depth_root: str, split_name: str, class_name: str, object_id: str) -> str:
+    """根据 split 名称解析深度图目录。"""
     if split_name in {"train_seen", "val_seen"}:
         return os.path.join(depth_root, "train", class_name, object_id)
     if split_name == "gallery_unseen":
@@ -140,6 +158,7 @@ def resolve_depth_dir(depth_root: str, split_name: str, class_name: str, object_
 
 
 def encode_rgb_object(encoder: CLIPEncoder, image_dir: str) -> np.ndarray:
+    """读取一个物体的所有 RGB 视图并做多视图编码。"""
     view_paths = list_rgb_views(image_dir)
     if not view_paths:
         raise FileNotFoundError(f"No JPG views found in {image_dir}")
@@ -148,6 +167,7 @@ def encode_rgb_object(encoder: CLIPEncoder, image_dir: str) -> np.ndarray:
 
 
 def encode_depth_object(encoder: CLIPEncoder, depth_dir: str) -> np.ndarray:
+    """读取一个物体的所有深度视图并做多视图编码。"""
     view_paths = list_depth_views(depth_dir)
     if not view_paths:
         raise FileNotFoundError(f"No depth PNG views found in {depth_dir}")
@@ -156,6 +176,7 @@ def encode_depth_object(encoder: CLIPEncoder, depth_dir: str) -> np.ndarray:
 
 
 def main():
+    """脚本入口：按协议遍历唯一物体并保存特征。"""
     args = parse_args()
     output_root = resolve_output_root(args)
     protocol = load_protocol(args.protocol)
@@ -184,6 +205,7 @@ def main():
             skipped_count += 1
             continue
 
+        # 不同 split 的目录组织不同，这里先解析真实路径再编码
         if args.modality == "rgb":
             image_dir = resolve_rgb_dir(
                 data_root=args.data_root,

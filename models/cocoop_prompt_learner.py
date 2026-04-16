@@ -8,6 +8,14 @@ from utils.clip_utils import get_clip_module
 
 
 class MetaNet(nn.Module):
+    """
+    功能：根据图像特征生成 prompt 偏置项。
+
+    用途：
+        这是 CoCoOp 里的条件分支，
+        用来让 prompt 随样本特征动态变化。
+    """
+
     def __init__(self, input_dim: int, ctx_dim: int, hidden_dim: int = 64):
         super().__init__()
         if hidden_dim <= 0:
@@ -20,10 +28,19 @@ class MetaNet(nn.Module):
         )
 
     def forward(self, image_features: torch.Tensor) -> torch.Tensor:
+        """把图像特征映射成上下文偏置向量。"""
         return self.net(image_features)
 
 
 class ConditionalPromptLearner(nn.Module):
+    """
+    功能：实现 CoCoOp 风格的条件式 prompt learner。
+
+    用途：
+        在共享上下文 `ctx` 的基础上，
+        再根据每个样本的图像特征动态调整 prompt。
+    """
+
     def __init__(
         self,
         class_names: Iterable[str],
@@ -62,6 +79,7 @@ class ConditionalPromptLearner(nn.Module):
             hidden_dim=meta_hidden_dim,
         )
 
+        # 先构造占位 prompt，后面会把中间的 X 替换成可学习上下文
         prompt_prefix = " ".join(["X"] * self.n_ctx)
         prompt_texts = [f"{prompt_prefix} {name}." for name in self.class_names]
         tokenized_prompts = clip.tokenize(prompt_texts)
@@ -75,6 +93,13 @@ class ConditionalPromptLearner(nn.Module):
         self.register_buffer("token_suffix", embedding[:, 1 + self.n_ctx :, :])
 
     def _init_context(self, clip, clip_model):
+        """
+        功能：初始化共享上下文参数 `ctx`。
+
+        两种方式：
+            1. 没有 ctx_init：随机初始化
+            2. 提供 ctx_init：从文本初始化，再按需要补齐长度
+        """
         if not self.ctx_init.strip():
             ctx = torch.empty(
                 self.n_ctx,
@@ -109,9 +134,11 @@ class ConditionalPromptLearner(nn.Module):
         return init_ctx
 
     def get_context(self) -> torch.Tensor:
+        """返回当前共享上下文的拷贝，用于保存 checkpoint。"""
         return self.ctx.detach().clone()
 
     def load_context(self, ctx_tensor: torch.Tensor) -> None:
+        """把外部保存的上下文参数加载回当前模型。"""
         if tuple(ctx_tensor.shape) != tuple(self.ctx.shape):
             raise ValueError(
                 f"Prompt context shape mismatch: expected {tuple(self.ctx.shape)}, "
@@ -123,11 +150,18 @@ class ConditionalPromptLearner(nn.Module):
             )
 
     def forward(self, image_features: torch.Tensor) -> torch.Tensor:
+        """
+        功能：为一个 batch 的样本生成条件式 prompts。
+
+        返回：
+            shape = (B, C, prompt_len, ctx_dim)
+        """
         image_features = image_features.to(device=self.device, dtype=self.dtype)
         conditional_bias = self.meta_net(image_features)
         conditional_ctx = self.ctx.unsqueeze(0) + conditional_bias.unsqueeze(1)
         conditional_ctx = conditional_ctx.unsqueeze(1).expand(-1, self.n_cls, -1, -1)
 
+        # 将 prompt 前缀、条件上下文和类别后缀拼起来
         batch_size = image_features.shape[0]
         token_prefix = self.token_prefix.unsqueeze(0).expand(batch_size, -1, -1, -1)
         token_suffix = self.token_suffix.unsqueeze(0).expand(batch_size, -1, -1, -1)
@@ -139,6 +173,13 @@ class ConditionalPromptLearner(nn.Module):
         text_encoder,
         prompt_chunk_size: int = 0,
     ) -> torch.Tensor:
+        """
+        功能：把条件式 prompts 编码成文本特征。
+
+        说明：
+            prompt_chunk_size > 0 时，会分块编码，
+            用来控制大 batch 下的显存占用。
+        """
         prompts = self(image_features)
         batch_size, n_cls, prompt_len, ctx_dim = prompts.shape
         prompts = prompts.reshape(batch_size * n_cls, prompt_len, ctx_dim)
@@ -152,6 +193,7 @@ class ConditionalPromptLearner(nn.Module):
             total_prompts = prompts.shape[0]
             for start in range(0, total_prompts, prompt_chunk_size):
                 end = min(start + prompt_chunk_size, total_prompts)
+                # 分块编码，避免一次性展开太多 prompt
                 chunks.append(
                     text_encoder(prompts[start:end], tokenized_prompts[start:end])
                 )

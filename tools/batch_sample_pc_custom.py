@@ -1,3 +1,11 @@
+"""
+功能：批量把 ShapeNet 的 GLB 模型采样成点云并保存为 `.npy`。
+
+说明：
+    每个物体会被采样成固定数量的点，
+    然后做单位球归一化，方便后续深度图生成和检索使用。
+"""
+
 import os
 import numpy
 import trimesh
@@ -11,7 +19,9 @@ N_SAMPLE_POINTS = 2048  # 采样点数量
 # ==================================================================
 
 def batch_sample_category(category_name, category_input_dir):
-    """处理单个指定类别的所有GLB文件，返回统计结果"""
+    """
+    功能：处理单个类别下的所有 GLB 文件，并返回统计结果。
+    """
     # 1. 构造输出路径
     category_output_dir = os.path.join(PC_OUTPUT_ROOT, category_name)
     os.makedirs(category_output_dir, exist_ok=True)
@@ -80,7 +90,6 @@ def batch_sample_category(category_name, category_input_dir):
             output_npy_path = os.path.join(category_output_dir, glb_file.replace(".glb", ".npy"))
             numpy.save(output_npy_path, xyz)
 
-
             success_count += 1
             # 每处理10个文件打印进度
             if idx % 10 == 0:
@@ -104,6 +113,7 @@ def batch_sample_category(category_name, category_input_dir):
 
 
 if __name__ == "__main__":
+    # 自动遍历 ShapeNet 根目录下的所有类别文件夹
     # 1. 自动遍历ShapeNet根目录下的所有子文件夹（即所有类别）
     all_categories = []
     for item in os.listdir(SHAPENET_ROOT):
@@ -117,8 +127,8 @@ if __name__ == "__main__":
     
     print(f"\n检测到ShapeNet共{len(all_categories)}个类别，开始批量采样")
     print(f"采样结果将保存到：{PC_OUTPUT_ROOT}")
-    
-    # 2. 逐个处理所有类别，收集统计结果
+
+    # 2. 逐个处理所有类别，并收集汇总统计
     summary_stats = []
     for category_name, category_path in all_categories:
         stats = batch_sample_category(category_name, category_path)

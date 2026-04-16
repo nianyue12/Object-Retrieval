@@ -7,7 +7,12 @@ from torch.nn import functional as F
 
 
 class LoRALinear(nn.Module):
-    """A lightweight LoRA wrapper for Linear-like modules."""
+    """
+    功能：给线性层包一层轻量级 LoRA 适配器。
+
+    说明：
+        原始权重冻结，只训练低秩分解出的增量参数。
+    """
 
     def __init__(
         self,
@@ -54,6 +59,7 @@ class LoRALinear(nn.Module):
         return int(self.base.out_features)
 
     def merged_weight(self) -> torch.Tensor:
+        """返回基础权重和 LoRA 增量合并后的视图。"""
         delta = self.lora_B @ self.lora_A
         delta = delta.to(
             device=self.base.weight.device,
@@ -63,7 +69,7 @@ class LoRALinear(nn.Module):
 
     @property
     def weight(self) -> torch.Tensor:
-        # MultiheadAttention reads out_proj.weight directly, so expose the merged view.
+        # MultiheadAttention 会直接访问 out_proj.weight，因此这里暴露合并后的权重视图。
         return self.merged_weight()
 
     @property
@@ -71,6 +77,7 @@ class LoRALinear(nn.Module):
         return self.base.bias
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """前向输出 = 原层输出 + LoRA 增量。"""
         base_out = self.base(x)
         lora_hidden = F.linear(self.dropout(x), self.lora_A)
         lora_update = F.linear(lora_hidden, self.lora_B) * self.scaling
@@ -84,6 +91,7 @@ class LoRALinear(nn.Module):
 
 
 def _get_child_module(root: nn.Module, dotted_name: str):
+    """根据点分路径找到父模块和子模块名。"""
     parent = root
     parts = dotted_name.split(".")
     for part in parts[:-1]:
@@ -92,6 +100,7 @@ def _get_child_module(root: nn.Module, dotted_name: str):
 
 
 def _extract_visual_block_index(module_name: str) -> Optional[int]:
+    """从 CLIP 视觉分支模块名中解析 transformer block 编号。"""
     prefix = "visual.transformer.resblocks."
     if not module_name.startswith(prefix):
         return None
@@ -109,6 +118,9 @@ def _should_replace_module(
     block_indices: Optional[Sequence[int]],
     module_suffixes: Sequence[str],
 ) -> bool:
+    """
+    功能：判断某个模块是否应该被 LoRA 替换。
+    """
     if not isinstance(module, nn.Linear):
         return False
 
@@ -130,6 +142,12 @@ def apply_lora_to_clip(
     block_indices: Optional[Sequence[int]] = None,
     module_suffixes: Optional[Sequence[str]] = None,
 ) -> List[str]:
+    """
+    功能：把 LoRA 注入到 CLIP 视觉分支指定模块上。
+
+    返回：
+        被替换掉的模块名列表
+    """
     if module_suffixes is None:
         module_suffixes = ("mlp.c_fc", "mlp.c_proj", "attn.out_proj")
 
@@ -167,6 +185,9 @@ def apply_lora_to_clip(
 
 
 def mark_only_lora_trainable(model: nn.Module) -> List[str]:
+    """
+    功能：冻结全部参数，只保留 LoRA 参数可训练。
+    """
     for param in model.parameters():
         param.requires_grad_(False)
 
@@ -186,6 +207,7 @@ def mark_only_lora_trainable(model: nn.Module) -> List[str]:
 
 
 def extract_lora_state_dict(model: nn.Module) -> dict:
+    """导出当前模型里的 LoRA 参数。"""
     state = {}
     for module_name, module in model.named_modules():
         if not isinstance(module, LoRALinear):
@@ -196,6 +218,12 @@ def extract_lora_state_dict(model: nn.Module) -> dict:
 
 
 def load_lora_state_dict(model: nn.Module, state_dict: dict, strict: bool = True) -> dict:
+    """
+    功能：把保存的 LoRA 参数加载回模型。
+
+    返回：
+        缺失项和多余项信息
+    """
     module_map = dict(model.named_modules())
     loaded = set()
     unexpected = []
@@ -243,14 +271,17 @@ def load_lora_state_dict(model: nn.Module, state_dict: dict, strict: bool = True
 
 
 def count_trainable_parameters(model: nn.Module) -> int:
+    """统计当前可训练参数量。"""
     return sum(param.numel() for param in model.parameters() if param.requires_grad)
 
 
 def count_all_parameters(model: nn.Module) -> int:
+    """统计模型总参数量。"""
     return sum(param.numel() for param in model.parameters())
 
 
 def parse_int_list(raw_value: str) -> List[int]:
+    """把逗号分隔的字符串解析成整数列表。"""
     values = []
     for item in raw_value.split(","):
         item = item.strip()
@@ -263,6 +294,7 @@ def parse_int_list(raw_value: str) -> List[int]:
 
 
 def parse_str_list(raw_value: str) -> List[str]:
+    """把逗号分隔的字符串解析成字符串列表。"""
     values = [item.strip() for item in raw_value.split(",") if item.strip()]
     if not values:
         raise ValueError("Expected at least one string value.")

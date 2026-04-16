@@ -1,3 +1,11 @@
+"""
+功能：在 unseen 类别上运行基础零样本检索。
+
+说明：
+    这里的相似度只来自视觉特征，
+    支持 RGB、Depth 和二者加权融合三种模式。
+"""
+
 import argparse
 import json
 import os
@@ -24,6 +32,7 @@ from utils.protocol import get_split_items, load_protocol, materialize_split_pat
 
 
 def parse_args():
+    """解析命令行参数。"""
     parser = argparse.ArgumentParser(
         description="Evaluate zero-shot retrieval on unseen classes."
     )
@@ -38,10 +47,19 @@ def parse_args():
         default="hgm2r",
         help="Primary metric style for reporting. Use both to save legacy and HGM2R metrics together.",
     )
+    parser.add_argument(
+        "--save_name",
+        type=str,
+        default="",
+        help="Optional custom output file name under results/unseen_retrieval.",
+    )
     return parser.parse_args()
 
 
 def load_single_modality(protocol, split_name, feat_root):
+    """
+    功能：读取某个 split 的单模态特征和标签。
+    """
     entries = materialize_split_paths(protocol, split_name, feat_root)
     feats, labels = [], []
     for cls, path in entries:
@@ -51,6 +69,9 @@ def load_single_modality(protocol, split_name, feat_root):
 
 
 def load_fusion(protocol, split_name, alpha, rgb_feat_root, depth_feat_root):
+    """
+    功能：读取 RGB / Depth 特征并做加权融合。
+    """
     feats, labels = [], []
     for cls, item in get_split_items(protocol, split_name):
         rgb_feat = load_feature(
@@ -71,10 +92,14 @@ def load_fusion(protocol, split_name, alpha, rgb_feat_root, depth_feat_root):
 
 
 def normalize_rows(feats):
+    """对特征矩阵按行做 L2 归一化。"""
     return feats / np.linalg.norm(feats, axis=1, keepdims=True)
 
 
 def compute_similarity(query_feats, gallery_feats):
+    """
+    功能：分 batch 计算 query 与 gallery 的余弦相似度矩阵。
+    """
     sim = np.zeros((query_feats.shape[0], gallery_feats.shape[0]), dtype=np.float32)
     for start in tqdm(range(0, query_feats.shape[0], BATCH_SIZE), desc="Computing similarity"):
         end = min(start + BATCH_SIZE, query_feats.shape[0])
@@ -83,6 +108,7 @@ def compute_similarity(query_feats, gallery_feats):
 
 
 def decorate_save_name(base_name, metric_style):
+    """根据指标风格给结果文件名加后缀。"""
     if metric_style == "legacy":
         return base_name
     stem, ext = os.path.splitext(base_name)
@@ -90,6 +116,7 @@ def decorate_save_name(base_name, metric_style):
 
 
 def main():
+    """脚本入口：加载特征、计算相似度、评估并保存结果。"""
     args = parse_args()
     protocol = load_protocol(args.protocol)
 
@@ -123,6 +150,7 @@ def main():
             args.depth_feat_root,
         )
 
+    # 归一化后做点积，相当于余弦相似度
     gallery_feats = normalize_rows(gallery_feats)
     query_feats = normalize_rows(query_feats)
 
@@ -131,6 +159,7 @@ def main():
     print(f"Gallery size: {gallery_feats.shape[0]}")
     print(f"Query size: {query_feats.shape[0]}")
 
+    # 计算检索相似度并评估指标
     sim_matrix = compute_similarity(query_feats, gallery_feats)
 
     eval_result = evaluate_retrieval(
@@ -149,7 +178,7 @@ def main():
         base_save_name = f"{args.mode}_zero_shot_alpha{alpha_tag}.json"
     else:
         base_save_name = f"{args.mode}_zero_shot.json"
-    save_name = decorate_save_name(base_save_name, args.metric_style)
+    save_name = args.save_name or decorate_save_name(base_save_name, args.metric_style)
     save_path = os.path.join(UNSEEN_RESULT_DIR, save_name)
 
     output = {

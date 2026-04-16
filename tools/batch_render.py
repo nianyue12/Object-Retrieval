@@ -1,3 +1,11 @@
+"""
+功能：批量调用 BlenderProc 渲染指定类别下的 GLB 模型。
+
+说明：
+    这个脚本会按类别遍历 ShapeNet 中的 `.glb` 文件，
+    调用 `render_single_glb.py` 生成 RGB 图、深度图和相机参数。
+"""
+
 import os
 import subprocess
 import sys
@@ -24,6 +32,9 @@ os.environ["BLENDER_EXECUTABLE"] = BLENDER_EXE  # 强制指定Blender路径
 
 # ========== 验证Blender是否安装成功 ==========
 def check_blender():
+    """
+    功能：检查 Blender 是否存在且版本是否正确。
+    """
     if not os.path.exists(BLENDER_EXE):
         print(f" 未找到Blender：{BLENDER_EXE}")
         print(" 请先手动安装Blender 3.6.5到上述路径，下载地址：")
@@ -50,8 +61,10 @@ def check_blender():
 # ========== 单个类别渲染函数（核心逻辑） ==========
 def render_category(category):
     """
-    渲染单个类别的所有GLB模型
-    :param category: 类别名称（如bag、ashcan、airplane）
+    功能：渲染单个类别下的所有 GLB 模型。
+
+    参数：
+        category: 类别名称，例如 `bag`、`ashcan`、`airplane`
     """
     # 构建当前类别的路径
     category_dir = os.path.join(ROOT_DIR, "ShapeNet", category)
@@ -143,7 +156,7 @@ def render_category(category):
         
         try:
             print(f"[{idx+1}/{total_models}] 正在渲染：{model_name}")
-            # 执行渲染
+            # 调用 BlenderProc 执行渲染
             result = subprocess.run(
                 render_cmd,
                 # shell=True,
@@ -151,10 +164,10 @@ def render_category(category):
                 timeout=300,  # 单模型渲染超时5分钟
                 env=os.environ.copy()  # 传递所有D盘环境变量
             )
-            
+
             # 检查渲染结果
             if result.returncode == 0:
-                # 验证是否生成12张图片（防止空渲染）
+                # 进一步检查输出目录里是否真的生成了足够的视图
                 rgb_files = [f for f in os.listdir(out_dir) if f.startswith("rgb_") and f.endswith(".png")] if os.path.exists(out_dir) else []
                 if len(rgb_files) >= 12:
                     print(f"[{idx+1}/{total_models}]  渲染成功：{model_name}")

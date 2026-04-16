@@ -1,3 +1,11 @@
+"""
+功能：使用训练好的 LoRA checkpoint 提取 RGB / Depth CLIP 特征。
+
+说明：
+    这个脚本会先把 LoRA 参数注入 CLIP，
+    再对每个物体的多视图图像做编码并输出单个 `.npy` 特征。
+"""
+
 import argparse
 import os
 import sys
@@ -21,6 +29,7 @@ DEPTH_MAP_ROOT = os.path.join(BASE_DIR, "depth_maps")
 
 
 def parse_args():
+    """解析命令行参数。"""
     parser = argparse.ArgumentParser(
         description="Extract CLIP features with a trained visual LoRA checkpoint."
     )
@@ -35,12 +44,14 @@ def parse_args():
 
 
 def resolve_device(device_arg: str) -> torch.device:
+    """根据输入参数选择运行设备。"""
     if device_arg:
         return torch.device(device_arg)
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def safe_torch_load(path: str, device):
+    """兼容不同 PyTorch 版本加载 checkpoint。"""
     try:
         return torch.load(path, map_location=device, weights_only=True)
     except TypeError:
@@ -48,10 +59,14 @@ def safe_torch_load(path: str, device):
 
 
 def load_rgb_image(path: str) -> Image.Image:
+    """读取 RGB 图像。"""
     return Image.open(path).convert("RGB")
 
 
 def load_depth_image(path: str) -> Image.Image:
+    """
+    功能：把深度图转换成 CLIP 可直接处理的 3 通道 RGB 图。
+    """
     depth = Image.open(path)
     depth_array = np.array(depth, dtype=np.float32)
 
@@ -71,6 +86,9 @@ def load_depth_image(path: str) -> Image.Image:
 
 
 def iter_rgb_objects(input_root: str) -> List[Tuple[str, str, List[str]]]:
+    """
+    功能：遍历 RGB 多视图目录，收集每个物体的视图路径。
+    """
     objects = []
     for category_dir in sorted(os.listdir(input_root)):
         full_category_dir = os.path.join(input_root, category_dir)
@@ -94,6 +112,9 @@ def iter_rgb_objects(input_root: str) -> List[Tuple[str, str, List[str]]]:
 
 
 def iter_depth_objects(input_root: str) -> List[Tuple[str, str, List[str]]]:
+    """
+    功能：遍历深度图目录，收集每个物体的视图路径。
+    """
     objects = []
     for class_name in sorted(os.listdir(input_root)):
         class_dir = os.path.join(input_root, class_name)
@@ -121,6 +142,9 @@ def encode_object_views(
     device: torch.device,
     batch_size: int,
 ) -> np.ndarray:
+    """
+    功能：对单个物体的多视图图像做编码，并融合成一个特征向量。
+    """
     if not view_paths:
         raise ValueError("view_paths must contain at least one file.")
 
@@ -132,6 +156,7 @@ def encode_object_views(
             image = load_depth_image(view_path)
         tensors.append(preprocess(image))
 
+    # 先把所有视图堆成一个张量，再分 batch 编码
     all_views = torch.stack(tensors, dim=0)
     encoded = []
     with torch.no_grad():
@@ -142,6 +167,7 @@ def encode_object_views(
             features = features / features.norm(dim=-1, keepdim=True)
             encoded.append(features.cpu())
 
+    # 多视图特征做均值池化，得到单个物体表示
     view_features = torch.cat(encoded, dim=0).numpy().astype(np.float32)
     pooled = view_features.mean(axis=0)
     norm = np.linalg.norm(pooled)
@@ -151,6 +177,7 @@ def encode_object_views(
 
 
 def main():
+    """脚本入口：加载 LoRA 后批量提取物体特征。"""
     args = parse_args()
     device = resolve_device(args.device)
     checkpoint = safe_torch_load(args.lora_ckpt, device)
@@ -159,6 +186,7 @@ def main():
     if not input_root:
         input_root = RGB_VIEW_ROOT if args.modality == "rgb" else DEPTH_MAP_ROOT
 
+    # 先恢复基础 CLIP，再注入 LoRA 参数
     _, model, preprocess = load_clip_model(
         checkpoint["clip_model"],
         device=device,
@@ -203,6 +231,7 @@ def main():
             skipped_count += 1
             continue
 
+        # 把一个物体的多视图编码成单个融合特征
         pooled_feature = encode_object_views(
             model=model,
             preprocess=preprocess,

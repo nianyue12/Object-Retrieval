@@ -9,6 +9,9 @@ ClassItems = Dict[str, List[str]]
 
 
 def build_class_file_dict(feat_root: str) -> Dict[str, List[str]]:
+    """
+    功能：扫描特征目录，建立“类别 -> 特征文件列表”的映射。
+    """
     class_to_files: Dict[str, List[str]] = {}
 
     for cls in os.listdir(feat_root):
@@ -28,6 +31,9 @@ def build_class_file_dict(feat_root: str) -> Dict[str, List[str]]:
 
 
 def build_common_class_items(rgb_root: str, depth_root: str) -> ClassItems:
+    """
+    功能：找出 RGB 和深度特征都存在的公共样本集合。
+    """
     rgb_dict = build_class_file_dict(rgb_root)
     depth_dict = build_class_file_dict(depth_root)
 
@@ -43,6 +49,7 @@ def build_common_class_items(rgb_root: str, depth_root: str) -> ClassItems:
 
 
 def _split_items(items: List[str], ratio: float) -> Tuple[List[str], List[str]]:
+    """按给定比例把同一类样本切成两部分。"""
     if len(items) < 2:
         raise ValueError("Each class must contain at least 2 samples.")
 
@@ -59,6 +66,13 @@ def build_seen_unseen_protocol(
     unseen_gallery_ratio: float,
     seed: int,
 ) -> dict:
+    """
+    功能：构建 seen / unseen 协议划分。
+
+    输出包含：
+        seen/unseen 类别列表，
+        以及 train_seen / val_seen / gallery_unseen / query_unseen 四个 split。
+    """
     random.seed(seed)
     np.random.seed(seed)
 
@@ -110,17 +124,22 @@ def build_seen_unseen_protocol(
 
 
 def save_protocol(protocol: dict, path: str) -> None:
+    """把协议字典保存成 JSON 文件。"""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(protocol, f, indent=4)
 
 
 def load_protocol(path: str) -> dict:
+    """读取协议 JSON 文件。"""
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def get_split_items(protocol: dict, split_name: str) -> List[Tuple[str, str]]:
+    """
+    功能：把某个 split 展平成 `(class_name, item_name)` 列表。
+    """
     split_dict = protocol[split_name]
     items: List[Tuple[str, str]] = []
     for cls in split_dict:
@@ -134,6 +153,9 @@ def materialize_split_paths(
     split_name: str,
     feat_root: str,
 ) -> List[Tuple[str, str]]:
+    """
+    功能：把 split 里的样本名拼成实际特征文件路径。
+    """
     entries = []
     for cls, item in get_split_items(protocol, split_name):
         entries.append((cls, os.path.join(feat_root, cls, item)))

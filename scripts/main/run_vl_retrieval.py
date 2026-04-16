@@ -1,3 +1,11 @@
+"""
+功能：运行带语义重排的 visual-language 检索。
+
+说明：
+    这个脚本会先构建视觉分支和语义分支，
+    再按指定策略把二者相似度融合，用于 unseen 检索评估。
+"""
+
 import argparse
 import json
 import os
@@ -32,6 +40,7 @@ from utils.semantic import (
 
 
 def parse_args():
+    """解析 visual-language 检索脚本的命令行参数。"""
     parser = argparse.ArgumentParser(
         description="Run zero-training visual-language retrieval with semantic reranking."
     )
@@ -100,17 +109,20 @@ def parse_args():
 
 
 def normalize_rows(feats: np.ndarray) -> np.ndarray:
+    """对特征矩阵按行做 L2 归一化。"""
     norms = np.linalg.norm(feats, axis=1, keepdims=True)
     return feats / np.clip(norms, 1e-12, None)
 
 
 def softmax_rows(logits: np.ndarray) -> np.ndarray:
+    """对每一行 logits 做 softmax。"""
     logits = logits - logits.max(axis=1, keepdims=True)
     exp_logits = np.exp(logits)
     return exp_logits / np.clip(exp_logits.sum(axis=1, keepdims=True), 1e-12, None)
 
 
 def entropy_confidence(probs: np.ndarray) -> np.ndarray:
+    """根据类别分布熵估计每个样本的语义置信度。"""
     if probs.shape[1] <= 1:
         return np.ones(probs.shape[0], dtype=np.float32)
 
@@ -119,6 +131,13 @@ def entropy_confidence(probs: np.ndarray) -> np.ndarray:
 
 
 def resolve_text_classes(protocol: dict, text_scope: str):
+    """
+    功能：决定语义文本库使用哪些类别。
+
+    说明：
+        unseen -> 只使用 unseen 类别
+        all    -> 同时使用 seen + unseen 类别
+    """
     if text_scope == "all":
         return list(dict.fromkeys(protocol["seen_classes"] + protocol["unseen_classes"]))
     return list(protocol["unseen_classes"])
@@ -130,6 +149,9 @@ def load_split_rgb_depth(
     rgb_feat_root: str,
     depth_feat_root: str,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    功能：同时读取某个 split 的 RGB 特征、Depth 特征和标签。
+    """
     rgb_feats = []
     depth_feats = []
     labels = []
@@ -155,6 +177,7 @@ def build_visual_features(
     mode: str,
     alpha: float,
 ) -> np.ndarray:
+    """根据 mode 构造最终视觉分支特征。"""
     if mode == "rgb":
         return rgb_feats
     if mode == "depth":
@@ -167,6 +190,9 @@ def build_semantic_branch(
     text_prototypes: np.ndarray,
     temperature: float,
 ) -> Dict[str, np.ndarray]:
+    """
+    功能：基于固定文本原型构建单个模态的语义分支输出。
+    """
     logits = (feats @ text_prototypes.T) / temperature
     probs = softmax_rows(logits).astype(np.float32)
     semantic_embed = normalize_rows(probs @ text_prototypes).astype(np.float32)
@@ -188,6 +214,12 @@ def fuse_semantic_branches(
     semantic_fusion: str,
     text_prototypes: np.ndarray,
 ) -> Dict[str, np.ndarray]:
+    """
+    功能：融合 RGB / Depth 两个模态的语义分支。
+
+    说明：
+        confidence 模式会根据每个模态自己的语义置信度动态分配权重。
+    """
     if mode == "rgb":
         return rgb_branch
     if mode == "depth":
@@ -227,6 +259,7 @@ def compute_text_top1_acc(
     class_names,
     labels: np.ndarray,
 ) -> float:
+    """根据语义分支概率计算文本 top-1 诊断准确率。"""
     pred_indices = probs.argmax(axis=1)
     pred_labels = np.array(class_names)[pred_indices]
     return float(np.mean(pred_labels == labels))
@@ -239,6 +272,14 @@ def build_semantic_similarity(
     start: int,
     end: int,
 ) -> np.ndarray:
+    """
+    功能：构造 query 与 gallery 的语义相似度。
+
+    支持：
+        prob   -> 概率分布相似度
+        embed  -> 语义嵌入相似度
+        hybrid -> 二者平均
+    """
     if semantic_similarity == "prob":
         return query_semantic["probs"][start:end] @ gallery_semantic["probs"].T
     if semantic_similarity == "embed":
@@ -256,6 +297,9 @@ def blend_similarity(
     combine_strategy: str,
     rerank_topk: int,
 ) -> np.ndarray:
+    """
+    功能：把视觉相似度和语义相似度按指定策略融合。
+    """
     if semantic_weight <= 0.0:
         return visual_sim.astype(np.float32)
 
@@ -299,6 +343,9 @@ def compute_combined_similarity(
     combine_strategy: str,
     rerank_topk: int,
 ) -> np.ndarray:
+    """
+    功能：分 batch 计算最终 visual-language 相似度矩阵。
+    """
     sim_matrix = np.empty(
         (query_visual.shape[0], gallery_visual.shape[0]), dtype=np.float32
     )
@@ -328,10 +375,12 @@ def compute_combined_similarity(
 
 
 def float_tag(value: float) -> str:
+    """把浮点数转成适合文件名的字符串。"""
     return f"{value:.2f}".replace(".", "p")
 
 
 def build_default_save_name(args) -> str:
+    """根据当前配置生成默认结果文件名。"""
     parts = [
         "vl",
         args.mode,
@@ -355,6 +404,7 @@ def build_default_save_name(args) -> str:
 
 
 def main():
+    """脚本入口：构建视觉/语义分支，评估检索并保存结果。"""
     args = parse_args()
     if args.prompt_mode in {"coop", "cocoop"} and not args.prompt_ckpt:
         raise ValueError(
@@ -364,6 +414,7 @@ def main():
     protocol = load_protocol(args.protocol)
     text_classes = resolve_text_classes(protocol, args.text_scope)
 
+    # 先准备 query / gallery 的双模态特征
     gallery_rgb, gallery_depth, gallery_labels = load_split_rgb_depth(
         protocol,
         "gallery_unseen",
@@ -392,6 +443,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.prompt_mode == "cocoop":
+        # CoCoOp 会根据每个样本特征动态生成文本分支
         model, prompt_learner, text_encoder, _ = load_cocoop_prompt_components(
             text_classes,
             clip_model=args.clip_model,
@@ -419,6 +471,7 @@ def main():
             desc="Building query semantic branch",
         )
     else:
+        # fixed / coop 模式先构建固定文本原型，再分别生成 RGB / Depth 语义分支
         text_prototypes = build_text_prototypes(
             text_classes,
             clip_model=args.clip_model,
@@ -475,6 +528,7 @@ def main():
     print(f"Gallery size: {gallery_visual.shape[0]}")
     print(f"Query size: {query_visual.shape[0]}")
 
+    # 融合视觉与语义相似度，得到最终检索矩阵
     sim_matrix = compute_combined_similarity(
         query_visual=query_visual,
         gallery_visual=gallery_visual,

@@ -1,3 +1,7 @@
+"""
+功能：批量提取 RGB 多视图图像的 CLIP 特征。
+"""
+
 import os
 import sys
 
@@ -20,6 +24,9 @@ N_VIEWS = 12
 os.makedirs(OUT_FEAT_DIR, exist_ok=True)
 
 def extract_object_feat(obj_dir):
+    """
+    功能：提取单个物体的 RGB 多视图特征。
+    """
     imgs = []
     for i in range(N_VIEWS):
         img_path = os.path.join(obj_dir, f"rgb_{i:04d}.png")
@@ -29,9 +36,10 @@ def extract_object_feat(obj_dir):
 
     if len(imgs) == 0:
         return None
-    
-    feat = encoder.encode_multi_view(imgs)   # [V, 512]
-    return feat                # [512]
+
+    # CLIPEncoder 内部会对多视图特征做平均池化并归一化
+    feat = encoder.encode_multi_view(imgs)
+    return feat
 
 # ===== 主循环 =====
 for cat_dir in sorted(os.listdir(ROOT_IMG_DIR)):
@@ -47,6 +55,7 @@ for cat_dir in sorted(os.listdir(ROOT_IMG_DIR)):
 
     print(f"\n📂 Processing category: {cat_name}")
 
+    # 遍历当前类别下的每个物体目录
     for obj_id in tqdm(os.listdir(full_cat_dir)):
         obj_dir = os.path.join(full_cat_dir, obj_id)
         if not os.path.isdir(obj_dir):

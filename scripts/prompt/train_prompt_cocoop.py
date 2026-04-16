@@ -1,3 +1,11 @@
+"""
+功能：在缓存好的 CLIP 特征上训练 CoCoOp prompt。
+
+说明：
+    这里训练的是条件式 prompt learner，
+    会根据输入特征动态生成不同样本的文本 prompt。
+"""
+
 import argparse
 import json
 import os
@@ -30,6 +38,7 @@ from utils.protocol import get_split_items, load_protocol
 
 
 def parse_args():
+    """解析 CoCoOp 训练参数。"""
     parser = argparse.ArgumentParser(
         description="Train CoCoOp prompts on cached CLIP features."
     )
@@ -81,6 +90,7 @@ def parse_args():
 
 
 def set_seed(seed: int) -> None:
+    """固定随机种子。"""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -89,17 +99,20 @@ def set_seed(seed: int) -> None:
 
 
 def normalize_rows(feats: np.ndarray) -> np.ndarray:
+    """对特征矩阵按行做 L2 归一化。"""
     norms = np.linalg.norm(feats, axis=1, keepdims=True)
     return feats / np.clip(norms, 1e-12, None)
 
 
 def resolve_device(device_arg: str) -> torch.device:
+    """根据输入参数选择设备。"""
     if device_arg:
         return torch.device(device_arg)
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def make_grad_scaler(use_amp: bool):
+    """创建 AMP 梯度缩放器。"""
     try:
         return torch.amp.GradScaler("cuda", enabled=use_amp)
     except AttributeError:
@@ -107,6 +120,7 @@ def make_grad_scaler(use_amp: bool):
 
 
 def autocast_context(use_amp: bool):
+    """返回 AMP 自动混合精度上下文。"""
     try:
         return torch.amp.autocast("cuda", enabled=use_amp)
     except AttributeError:
@@ -122,6 +136,12 @@ def load_split_features(
     depth_feat_root: str,
     label_to_index: dict,
 ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    功能：读取协议中某个 split 的特征和标签。
+
+    说明：
+        fusion 模式会先把 RGB / Depth 特征加权融合。
+    """
     feats = []
     labels = []
 
@@ -152,6 +172,7 @@ def build_loader(
     shuffle: bool,
     num_workers: int,
 ) -> DataLoader:
+    """把缓存特征包装成 DataLoader。"""
     dataset = TensorDataset(torch.from_numpy(feats), torch.from_numpy(labels))
     return DataLoader(
         dataset,
@@ -168,6 +189,9 @@ def compute_logits(
     temperature: torch.Tensor,
     prompt_chunk_size: int,
 ) -> torch.Tensor:
+    """
+    功能：计算 CoCoOp 条件文本特征下的分类 logits。
+    """
     image_features = F.normalize(image_feats, dim=-1)
     text_features = prompt_learner.get_text_features(
         image_features,
@@ -189,6 +213,9 @@ def run_epoch(
     desc: str = "",
     optimizer=None,
 ) -> Tuple[float, float]:
+    """
+    功能：执行一轮 CoCoOp 训练或验证。
+    """
     is_train = optimizer is not None
     prompt_learner.train(is_train)
     text_encoder.train(is_train)
@@ -235,6 +262,7 @@ def run_epoch(
 
 
 def build_default_save_name(args) -> str:
+    """根据关键超参数生成默认 checkpoint 名。"""
     ctx_tag = f"nctx{args.n_ctx}"
     init_tag = args.ctx_init.strip().lower().replace(" ", "_")
     if not init_tag:
@@ -244,11 +272,13 @@ def build_default_save_name(args) -> str:
 
 
 def save_checkpoint(path: str, checkpoint: dict) -> None:
+    """保存 CoCoOp checkpoint。"""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save(checkpoint, path)
 
 
 def main():
+    """脚本入口：准备缓存特征、训练 CoCoOp、保存最优结果。"""
     args = parse_args()
     set_seed(args.seed)
 
@@ -276,6 +306,7 @@ def main():
     )
 
     device = resolve_device(args.device)
+    # 基础 CLIP 只作为冻结的特征空间使用
     _, clip_model, _ = load_clip_model(
         args.clip_model,
         device=device,
@@ -285,6 +316,7 @@ def main():
     for param in clip_model.parameters():
         param.requires_grad_(False)
 
+    # CoCoOp 学习共享上下文 + 条件 meta-net
     prompt_learner = ConditionalPromptLearner(
         class_names=seen_classes,
         clip_model=clip_model,
@@ -299,6 +331,7 @@ def main():
     use_amp = device.type == "cuda" and not args.disable_amp
     scaler = make_grad_scaler(use_amp)
 
+    # DataLoader 直接读取缓存好的特征，而不是原始图像
     train_loader = build_loader(
         train_feats,
         train_labels,

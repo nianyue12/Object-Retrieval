@@ -1,3 +1,7 @@
+"""
+功能：为 OS-MN40-core 数据集生成项目可用的协议文件。
+"""
+
 import argparse
 import json
 import os
@@ -23,6 +27,7 @@ DEFAULT_PROTOCOL_PATH = os.path.join(
 
 
 def parse_args():
+    """解析命令行参数。"""
     parser = argparse.ArgumentParser(
         description="Prepare an OS-MN40-core protocol file for this project."
     )
@@ -44,6 +49,7 @@ def parse_args():
 
 
 def _split_items(items: List[str], ratio: float) -> Tuple[List[str], List[str]]:
+    """按比例把 seen 类样本切成训练集和验证集。"""
     if len(items) < 2:
         raise ValueError("Each seen class must contain at least 2 samples.")
 
@@ -53,6 +59,9 @@ def _split_items(items: List[str], ratio: float) -> Tuple[List[str], List[str]]:
 
 
 def read_label_file(path: str) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
+    """
+    功能：读取 `object_id,class_name` 格式的标签文件。
+    """
     class_to_items: Dict[str, List[str]] = defaultdict(list)
     item_to_class: Dict[str, str] = {}
 
@@ -78,6 +87,9 @@ def read_label_file(path: str) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
 
 
 def discover_seen_items(train_root: str) -> Dict[str, List[str]]:
+    """
+    功能：扫描 train 目录，收集 seen 类样本。
+    """
     seen_dict: Dict[str, List[str]] = {}
 
     for class_name in sorted(os.listdir(train_root)):
@@ -104,6 +116,9 @@ def validate_source_dirs(
     query_labels: Dict[str, List[str]],
     target_labels: Dict[str, List[str]],
 ) -> None:
+    """
+    功能：检查协议里引用到的源目录是否都存在。
+    """
     train_root = os.path.join(data_root, "train")
     query_root = os.path.join(data_root, "query")
     target_root = os.path.join(data_root, "target")
@@ -135,6 +150,7 @@ def validate_source_dirs(
 
 
 def main():
+    """脚本入口：读取源标签、切分 seen 集、保存协议。"""
     args = parse_args()
     random.seed(args.seed)
 
@@ -155,6 +171,7 @@ def main():
             f"OS-MN40-core seen/unseen classes should not overlap, but found {overlap}"
         )
 
+    # seen 类进一步切成训练和验证，unseen 类直接沿用官方 query / target
     train_seen: Dict[str, List[str]] = {}
     val_seen: Dict[str, List[str]] = {}
     for class_name in seen_classes:

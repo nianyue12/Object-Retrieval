@@ -3,15 +3,20 @@ from tqdm import tqdm
 
 
 def _as_label_arrays(gallery_labels, query_labels):
+    """把标签统一转换成 numpy 数组。"""
     return np.array(gallery_labels), np.array(query_labels)
 
 
 def similarity_to_distance(sim_matrix):
+    """把相似度矩阵转成距离矩阵。"""
     # Features are L2-normalized before retrieval, so cosine distance is 1 - cosine similarity.
     return 1.0 - np.asarray(sim_matrix, dtype=np.float32)
 
 
 def compute_map(sim_matrix, gallery_labels, query_labels):
+    """
+    功能：计算检索任务中的 mAP。
+    """
     gallery_labels, query_labels = _as_label_arrays(gallery_labels, query_labels)
 
     ap_list = []
@@ -34,6 +39,9 @@ def compute_map(sim_matrix, gallery_labels, query_labels):
 
 
 def compute_ndcg(sim_matrix, gallery_labels, query_labels):
+    """
+    功能：计算检索任务中的 NDCG。
+    """
     gallery_labels, query_labels = _as_label_arrays(gallery_labels, query_labels)
 
     ndcg_list = []
@@ -58,6 +66,9 @@ def compute_ndcg(sim_matrix, gallery_labels, query_labels):
 
 
 def compute_anmrr(sim_matrix, gallery_labels, query_labels):
+    """
+    功能：按 MPEG-7 风格计算 ANMRR。
+    """
     gallery_labels, query_labels = _as_label_arrays(gallery_labels, query_labels)
 
     unique_query_labels = np.unique(query_labels)
@@ -82,7 +93,7 @@ def compute_anmrr(sim_matrix, gallery_labels, query_labels):
         if ng == 0:
             continue
 
-        # MPEG-7 style adaptive cut-off for each query.
+        # MPEG-7 风格的自适应截断长度
         kq = min(4 * ng, 2 * gtm)
         penalty_rank = 1.25 * kq
         relevant = np.where(sorted_labels == cls)[0] + 1
@@ -104,6 +115,7 @@ def compute_anmrr(sim_matrix, gallery_labels, query_labels):
 
 
 def compute_legacy_metrics(sim_matrix, gallery_labels, query_labels):
+    """汇总项目里旧版的检索指标。"""
     return {
         "mAP": compute_map(sim_matrix, gallery_labels, query_labels),
         "NDCG": compute_ndcg(sim_matrix, gallery_labels, query_labels),
@@ -112,6 +124,7 @@ def compute_legacy_metrics(sim_matrix, gallery_labels, query_labels):
 
 
 def compute_hgm2r_map(dist_matrix, query_labels, gallery_labels, top_k=None):
+    """按 HGM2R 的 evaluator 口径计算 mAP。"""
     n_gallery = dist_matrix.shape[1]
     if top_k is None:
         top_k = n_gallery
@@ -138,6 +151,7 @@ def compute_hgm2r_map(dist_matrix, query_labels, gallery_labels, top_k=None):
 
 
 def compute_hgm2r_recall(dist_matrix, query_labels, gallery_labels, top_k=100):
+    """按 HGM2R evaluator 口径计算 Recall@100。"""
     n_gallery = dist_matrix.shape[1]
     top_k = min(top_k, n_gallery)
     sorted_indices = dist_matrix.argsort(axis=1)
@@ -149,13 +163,14 @@ def compute_hgm2r_recall(dist_matrix, query_labels, gallery_labels, top_k=100):
         for rank in range(top_k):
             if query_labels[q] == gallery_labels[order[rank]]:
                 hits += 1
-        # This follows HGM2R's released evaluator exactly, even though the denominator is unusual.
+        # 这里严格跟随 HGM2R 官方 evaluator 的实现
         results.append(hits / max(1, np.sum(query_labels == query_labels[q])))
 
     return float(np.mean(results))
 
 
 def compute_hgm2r_ndcg(dist_matrix, query_labels, gallery_labels, k=100):
+    """按 HGM2R evaluator 口径计算 NDCG@k。"""
     n_gallery = dist_matrix.shape[1]
     k = min(k, n_gallery)
     sorted_indices = dist_matrix.argsort(axis=1)
@@ -176,6 +191,7 @@ def compute_hgm2r_ndcg(dist_matrix, query_labels, gallery_labels, k=100):
 
 
 def compute_hgm2r_anmrr(dist_matrix, query_labels, gallery_labels):
+    """按 HGM2R evaluator 口径计算 ANMRR。"""
     query_labels = np.array(query_labels)
     gallery_labels = np.array(gallery_labels)
     n_query = dist_matrix.shape[0]
@@ -206,6 +222,7 @@ def compute_hgm2r_anmrr(dist_matrix, query_labels, gallery_labels):
 
 
 def compute_hgm2r_metrics(sim_matrix, gallery_labels, query_labels):
+    """汇总 HGM2R 风格的一组检索指标。"""
     gallery_labels, query_labels = _as_label_arrays(gallery_labels, query_labels)
     dist_matrix = similarity_to_distance(sim_matrix)
     return {
@@ -219,6 +236,9 @@ def compute_hgm2r_metrics(sim_matrix, gallery_labels, query_labels):
 
 
 def evaluate_retrieval(sim_matrix, gallery_labels, query_labels, metric_style="hgm2r"):
+    """
+    功能：统一调度 legacy / hgm2r 两套检索指标。
+    """
     metric_style = metric_style.lower()
     if metric_style not in {"legacy", "hgm2r", "both"}:
         raise ValueError(f"Unsupported metric_style: {metric_style}")
@@ -242,6 +262,7 @@ def evaluate_retrieval(sim_matrix, gallery_labels, query_labels, metric_style="h
 
 
 def format_metric_report(metrics):
+    """把指标字典格式化成便于打印的一行文本。"""
     parts = []
     for key, value in metrics.items():
         if np.isfinite(value):
