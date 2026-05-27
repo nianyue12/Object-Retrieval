@@ -1,10 +1,12 @@
 """
-功能：在缓存好的 CLIP RGB / Depth 特征上训练一个共享残差 Adapter。
+Train a post-fusion residual Adapter on seen classes.
 
-说明：
-    - 不重新训练 CLIP，只训练轻量 Adapter
-    - 默认使用 seen 类做监督分类
-    - fusion 模式下同时约束 rgb / depth / fused 三个分支
+The training and evaluation path matches the revised thesis setting:
+
+RGB feature + Depth feature -> Fusion feature -> Adapter -> seen-class loss.
+
+At unseen retrieval time, the classifier is discarded and only the adapted
+Fusion feature is used for query-gallery cosine ranking.
 """
 
 import argparse
@@ -23,30 +25,28 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from configs.exp_config import (
+from configs.exp_config import (  # noqa: E402
     ALPHA_FUSION,
     DEFAULT_PROTOCOL_PATH,
     DEPTH_FEAT_DIR,
     RESULT_DIR,
     RGB_FEAT_DIR,
 )
-from models.clip_adapter import CLIPResidualAdapter
-from utils.clip_utils import load_clip_model
-from utils.features import load_feature
-from utils.protocol import get_split_items, load_protocol
-from utils.semantic import PROMPT_TEMPLATES
+from models.clip_adapter import CLIPResidualAdapter  # noqa: E402
+from utils.clip_utils import load_clip_model  # noqa: E402
+from utils.features import load_feature  # noqa: E402
+from utils.protocol import get_split_items, load_protocol  # noqa: E402
+from utils.semantic import PROMPT_TEMPLATES  # noqa: E402
 
 
 DEFAULT_SAVE_DIR = os.path.join(RESULT_DIR, "adapter")
 
 
 def parse_args():
-    # 训练输入是缓存好的 CLIP 特征，因此这里不需要原始图像路径。
     parser = argparse.ArgumentParser(
-        description="Train a shared residual Adapter on cached CLIP RGB/depth features."
+        description="Train a residual Adapter after RGB+Depth Fusion features."
     )
     parser.add_argument("--protocol", type=str, default=DEFAULT_PROTOCOL_PATH)
-    parser.add_argument("--mode", choices=["rgb", "depth", "fusion"], default="fusion")
     parser.add_argument("--alpha", type=float, default=ALPHA_FUSION)
     parser.add_argument("--rgb_feat_root", type=str, default=RGB_FEAT_DIR)
     parser.add_argument("--depth_feat_root", type=str, default=DEPTH_FEAT_DIR)
@@ -67,7 +67,6 @@ def parse_args():
 
 
 def set_seed(seed: int) -> None:
-    # 固定 Python / NumPy / Torch 随机性，方便重复实验。
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -76,29 +75,37 @@ def set_seed(seed: int) -> None:
 
 
 def resolve_device(device_arg: str) -> torch.device:
-    # 支持手动指定设备；未指定时自动优先使用 GPU。
     if device_arg:
         return torch.device(device_arg)
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def normalize_rows(feats: np.ndarray) -> np.ndarray:
+    feats = np.asarray(feats, dtype=np.float32)
     norms = np.linalg.norm(feats, axis=1, keepdims=True)
     return feats / np.clip(norms, 1e-12, None)
 
 
-def load_split_features(
+def fuse_features(
+    rgb_feats: np.ndarray,
+    depth_feats: np.ndarray,
+    alpha: float,
+) -> np.ndarray:
+    return normalize_rows(alpha * rgb_feats + (1.0 - alpha) * depth_feats)
+
+
+def load_split_fusion_features(
     protocol: dict,
     split_name: str,
     rgb_feat_root: str,
     depth_feat_root: str,
     label_to_index: dict,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    alpha: float,
+) -> Tuple[np.ndarray, np.ndarray]:
     rgb_feats = []
     depth_feats = []
     labels = []
 
-    # Adapter 训练同时读取 RGB 和 Depth 特征，保证两个模态样本顺序一致。
     for cls, item in get_split_items(protocol, split_name):
         rgb_path = os.path.join(rgb_feat_root, cls, item)
         depth_path = os.path.join(depth_feat_root, cls, item)
@@ -106,26 +113,22 @@ def load_split_features(
         depth_feats.append(load_feature(depth_path, aggregation="mean"))
         labels.append(label_to_index[cls])
 
-    return (
+    fusion_feats = fuse_features(
         normalize_rows(np.stack(rgb_feats).astype(np.float32)),
         normalize_rows(np.stack(depth_feats).astype(np.float32)),
-        np.array(labels, dtype=np.int64),
+        alpha,
     )
+    return fusion_feats, np.array(labels, dtype=np.int64)
 
 
 def build_loader(
-    rgb_feats: np.ndarray,
-    depth_feats: np.ndarray,
+    feats: np.ndarray,
     labels: np.ndarray,
     batch_size: int,
     shuffle: bool,
     num_workers: int,
 ) -> DataLoader:
-    dataset = TensorDataset(
-        torch.from_numpy(rgb_feats),
-        torch.from_numpy(depth_feats),
-        torch.from_numpy(labels),
-    )
+    dataset = TensorDataset(torch.from_numpy(feats), torch.from_numpy(labels))
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -140,7 +143,6 @@ def build_text_prototypes_and_logit_scale(
     clip_model_name: str,
     device: torch.device,
 ) -> Tuple[torch.Tensor, float]:
-    # 文本原型用于把适配后的视觉特征投到 seen 类分类空间。
     clip_module, clip_model, _ = load_clip_model(
         clip_model_name,
         device=device,
@@ -152,7 +154,6 @@ def build_text_prototypes_and_logit_scale(
     with torch.no_grad():
         for class_name in class_names:
             readable_name = class_name.replace("_", " ")
-            # 多模板平均可以降低单一 prompt 表达带来的偏差。
             prompts = [template.format(readable_name) for template in PROMPT_TEMPLATES]
             tokenized = clip_module.tokenize(prompts).to(device)
             text_features = clip_model.encode_text(tokenized)
@@ -173,29 +174,11 @@ def build_text_prototypes_and_logit_scale(
 
 
 def compute_logits(
-    image_feats: torch.Tensor,
+    adapted_feats: torch.Tensor,
     text_prototypes: torch.Tensor,
     logit_scale: float,
 ) -> torch.Tensor:
-    # 视觉特征与文本原型点积后乘以 CLIP 自带的 logit scale。
-    return logit_scale * image_feats @ text_prototypes.t()
-
-
-def fuse_features(
-    rgb_feats: torch.Tensor,
-    depth_feats: torch.Tensor,
-    alpha: float,
-) -> torch.Tensor:
-    # fusion 模式下 Adapter 后的 RGB/Depth 特征再次做加权融合。
-    return F.normalize(alpha * rgb_feats + (1.0 - alpha) * depth_feats, dim=-1)
-
-
-def metric_keys_for_mode(mode: str):
-    if mode == "rgb":
-        return "rgb_top1"
-    if mode == "depth":
-        return "depth_top1"
-    return "fused_top1"
+    return logit_scale * adapted_feats @ text_prototypes.t()
 
 
 def run_epoch(
@@ -203,62 +186,25 @@ def run_epoch(
     adapter: CLIPResidualAdapter,
     text_prototypes: torch.Tensor,
     logit_scale: float,
-    alpha: float,
-    mode: str,
     optimizer=None,
 ) -> Dict[str, float]:
     is_train = optimizer is not None
     adapter.train(is_train)
 
     total_loss = 0.0
+    total_correct = 0
     total_count = 0
-    rgb_correct = 0
-    depth_correct = 0
-    fused_correct = 0
 
-    # 同一个 Adapter 会同时作用在 RGB 和 Depth 特征上，训练共享适配空间。
-    for batch_rgb, batch_depth, batch_labels in loader:
-        batch_rgb = batch_rgb.to(text_prototypes.device, non_blocking=True)
-        batch_depth = batch_depth.to(text_prototypes.device, non_blocking=True)
+    for batch_feats, batch_labels in loader:
+        batch_feats = batch_feats.to(text_prototypes.device, non_blocking=True)
         batch_labels = batch_labels.to(text_prototypes.device, non_blocking=True)
 
         if is_train:
             optimizer.zero_grad()
 
-        adapted_rgb = adapter(batch_rgb)
-        adapted_depth = adapter(batch_depth)
-
-        if mode == "rgb":
-            rgb_logits = compute_logits(adapted_rgb, text_prototypes, logit_scale)
-            loss = F.cross_entropy(rgb_logits, batch_labels)
-            rgb_correct += int((rgb_logits.argmax(dim=1) == batch_labels).sum().item())
-        elif mode == "depth":
-            depth_logits = compute_logits(adapted_depth, text_prototypes, logit_scale)
-            loss = F.cross_entropy(depth_logits, batch_labels)
-            depth_correct += int(
-                (depth_logits.argmax(dim=1) == batch_labels).sum().item()
-            )
-        else:
-            # fusion 训练同时约束 RGB、Depth 和融合分支，避免某个模态被适配坏。
-            rgb_logits = compute_logits(adapted_rgb, text_prototypes, logit_scale)
-            depth_logits = compute_logits(adapted_depth, text_prototypes, logit_scale)
-            fused_logits = compute_logits(
-                fuse_features(adapted_rgb, adapted_depth, alpha),
-                text_prototypes,
-                logit_scale,
-            )
-            loss = (
-                F.cross_entropy(rgb_logits, batch_labels)
-                + F.cross_entropy(depth_logits, batch_labels)
-                + F.cross_entropy(fused_logits, batch_labels)
-            ) / 3.0
-            rgb_correct += int((rgb_logits.argmax(dim=1) == batch_labels).sum().item())
-            depth_correct += int(
-                (depth_logits.argmax(dim=1) == batch_labels).sum().item()
-            )
-            fused_correct += int(
-                (fused_logits.argmax(dim=1) == batch_labels).sum().item()
-            )
+        adapted_feats = adapter(batch_feats)
+        logits = compute_logits(adapted_feats, text_prototypes, logit_scale)
+        loss = F.cross_entropy(logits, batch_labels)
 
         if is_train:
             loss.backward()
@@ -266,35 +212,20 @@ def run_epoch(
 
         batch_size = int(batch_labels.size(0))
         total_loss += float(loss.item()) * batch_size
+        total_correct += int((logits.argmax(dim=1) == batch_labels).sum().item())
         total_count += batch_size
 
-    metrics = {
+    return {
         "loss": total_loss / max(1, total_count),
-        "rgb_top1": None,
-        "depth_top1": None,
-        "fused_top1": None,
+        "top1": total_correct / max(1, total_count),
     }
-
-    if mode == "rgb":
-        metrics["rgb_top1"] = rgb_correct / max(1, total_count)
-    elif mode == "depth":
-        metrics["depth_top1"] = depth_correct / max(1, total_count)
-    else:
-        metrics["rgb_top1"] = rgb_correct / max(1, total_count)
-        metrics["depth_top1"] = depth_correct / max(1, total_count)
-        metrics["fused_top1"] = fused_correct / max(1, total_count)
-
-    primary_key = metric_keys_for_mode(mode)
-    metrics["primary_top1"] = metrics[primary_key]
-    return metrics
 
 
 def build_default_save_name(args) -> str:
-    return f"clip_adapter_{args.mode}_h{args.hidden_dim}_seed{args.seed}.pt"
+    return f"fusion_post_adapter_h{args.hidden_dim}_seed{args.seed}.pt"
 
 
 def checkpoint_state_dict(module: torch.nn.Module) -> dict:
-    # checkpoint 只保存 CPU tensor，便于在不同设备上重新加载。
     return {key: value.detach().cpu() for key, value in module.state_dict().items()}
 
 
@@ -311,23 +242,24 @@ def main():
     seen_classes = list(protocol["seen_classes"])
     label_to_index = {cls: idx for idx, cls in enumerate(seen_classes)}
 
-    train_rgb, train_depth, train_labels = load_split_features(
+    train_feats, train_labels = load_split_fusion_features(
         protocol,
         "train_seen",
         args.rgb_feat_root,
         args.depth_feat_root,
         label_to_index,
+        args.alpha,
     )
-    val_rgb, val_depth, val_labels = load_split_features(
+    val_feats, val_labels = load_split_fusion_features(
         protocol,
         "val_seen",
         args.rgb_feat_root,
         args.depth_feat_root,
         label_to_index,
+        args.alpha,
     )
 
     device = resolve_device(args.device)
-    # Adapter 使用固定文本原型监督训练，不更新 CLIP 本体。
     text_prototypes, logit_scale = build_text_prototypes_and_logit_scale(
         seen_classes,
         clip_model_name=args.clip_model,
@@ -335,23 +267,21 @@ def main():
     )
 
     adapter = CLIPResidualAdapter(
-        dim=int(train_rgb.shape[1]),
+        dim=int(train_feats.shape[1]),
         hidden_dim=args.hidden_dim,
         dropout=args.dropout,
         residual_scale=args.residual_scale,
     ).to(device)
 
     train_loader = build_loader(
-        train_rgb,
-        train_depth,
+        train_feats,
         train_labels,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
     )
     val_loader = build_loader(
-        val_rgb,
-        val_depth,
+        val_feats,
         val_labels,
         batch_size=args.batch_size,
         shuffle=False,
@@ -364,8 +294,6 @@ def main():
         weight_decay=args.weight_decay,
     )
 
-    selection_metric = metric_keys_for_mode(args.mode)
-    # 按当前 mode 对应的验证准确率挑选最优 checkpoint。
     best_val_top1 = -1.0
     best_epoch = -1
     history = []
@@ -375,12 +303,12 @@ def main():
     )
 
     print(f"Seen classes: {seen_classes}")
-    print(f"Mode: {args.mode}")
+    print("Adapter position: post_fusion")
     print(f"Train size: {len(train_labels)}")
     print(f"Val size: {len(val_labels)}")
     print(f"Device: {device}")
-    print(f"Adapter dim: {train_rgb.shape[1]} -> {args.hidden_dim} -> {train_rgb.shape[1]}")
-    print(f"Selection metric: {selection_metric}")
+    print(f"Feature dim: {train_feats.shape[1]}")
+    print(f"Save path: {save_path}")
 
     for epoch in range(1, args.epochs + 1):
         train_metrics = run_epoch(
@@ -388,8 +316,6 @@ def main():
             adapter,
             text_prototypes,
             logit_scale,
-            alpha=args.alpha,
-            mode=args.mode,
             optimizer=optimizer,
         )
         with torch.no_grad():
@@ -398,55 +324,49 @@ def main():
                 adapter,
                 text_prototypes,
                 logit_scale,
-                alpha=args.alpha,
-                mode=args.mode,
                 optimizer=None,
             )
 
         history_entry = {
             "epoch": epoch,
             "train_loss": train_metrics["loss"],
-            "train_primary_top1": train_metrics["primary_top1"],
-            "train_rgb_top1": train_metrics["rgb_top1"],
-            "train_depth_top1": train_metrics["depth_top1"],
-            "train_fused_top1": train_metrics["fused_top1"],
+            "train_top1": train_metrics["top1"],
             "val_loss": val_metrics["loss"],
-            "val_primary_top1": val_metrics["primary_top1"],
-            "val_rgb_top1": val_metrics["rgb_top1"],
-            "val_depth_top1": val_metrics["depth_top1"],
-            "val_fused_top1": val_metrics["fused_top1"],
+            "val_top1": val_metrics["top1"],
         }
         history.append(history_entry)
 
         print(
             f"Epoch {epoch:03d} | "
             f"train_loss={train_metrics['loss']:.4f} "
-            f"train_top1={train_metrics['primary_top1']:.4f} | "
+            f"train_top1={train_metrics['top1']:.4f} | "
             f"val_loss={val_metrics['loss']:.4f} "
-            f"val_top1={val_metrics['primary_top1']:.4f}"
+            f"val_top1={val_metrics['top1']:.4f}"
         )
 
-        if val_metrics["primary_top1"] > best_val_top1:
-            best_val_top1 = val_metrics["primary_top1"]
+        if val_metrics["top1"] > best_val_top1:
+            best_val_top1 = val_metrics["top1"]
             best_epoch = epoch
             checkpoint = {
-                "method": "clip_feature_adapter",
+                "method": "fusion_post_adapter",
                 "clip_model": args.clip_model,
                 "protocol_path": args.protocol,
-                "mode": args.mode,
+                "adapter_position": "post_fusion",
+                "base_feature": "rgb_depth_fusion",
                 "alpha": float(args.alpha),
                 "seed": int(args.seed),
-                "feature_dim": int(train_rgb.shape[1]),
+                "feature_dim": int(train_feats.shape[1]),
                 "hidden_dim": int(args.hidden_dim),
                 "dropout": float(args.dropout),
                 "residual_scale": float(args.residual_scale),
                 "logit_scale": float(logit_scale),
-                "selection_metric": selection_metric,
                 "seen_classes": seen_classes,
                 "train_size": int(len(train_labels)),
                 "val_size": int(len(val_labels)),
                 "best_epoch": int(best_epoch),
                 "best_val_top1": float(best_val_top1),
+                "uses_unseen_class_names_for_training": False,
+                "uses_unseen_labels_for_training": False,
                 "adapter_state_dict": checkpoint_state_dict(adapter),
                 "history": history,
             }
@@ -455,28 +375,30 @@ def main():
     summary_path = os.path.splitext(save_path)[0] + ".json"
     summary = {
         "save_path": save_path,
-        "method": "clip_feature_adapter",
+        "method": "fusion_post_adapter",
         "clip_model": args.clip_model,
         "protocol_path": args.protocol,
-        "mode": args.mode,
+        "adapter_position": "post_fusion",
+        "base_feature": "rgb_depth_fusion",
         "alpha": float(args.alpha),
         "seed": int(args.seed),
-        "feature_dim": int(train_rgb.shape[1]),
+        "feature_dim": int(train_feats.shape[1]),
         "hidden_dim": int(args.hidden_dim),
         "dropout": float(args.dropout),
         "residual_scale": float(args.residual_scale),
         "logit_scale": float(logit_scale),
-        "selection_metric": selection_metric,
         "best_epoch": int(best_epoch),
         "best_val_top1": float(best_val_top1),
         "train_size": int(len(train_labels)),
         "val_size": int(len(val_labels)),
+        "uses_unseen_class_names_for_training": False,
+        "uses_unseen_labels_for_training": False,
         "history": history,
     }
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=4)
 
-    print(f"Best Adapter checkpoint saved to: {save_path}")
+    print(f"Best post-fusion Adapter checkpoint saved to: {save_path}")
     print(f"Best val top1: {best_val_top1:.4f} at epoch {best_epoch}")
     print(f"Training summary saved to: {summary_path}")
 

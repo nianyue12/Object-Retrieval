@@ -73,6 +73,7 @@ def load_depth_image(path: str) -> Image.Image:
     if depth_array.ndim == 3:
         depth_array = depth_array[..., 0]
 
+    # 深度图复用 CLIP 图像编码器，因此要先转换成 3 通道可视化图。
     if depth_array.max() > depth_array.min():
         depth_array = (depth_array - depth_array.min()) / (
             depth_array.max() - depth_array.min()
@@ -98,6 +99,7 @@ def iter_rgb_objects(input_root: str) -> List[Tuple[str, str, List[str]]]:
             continue
 
         class_name = category_dir.replace("_multi_view", "")
+        # 每个 object_id 对应一个多视图目录。
         for object_id in sorted(os.listdir(full_category_dir)):
             object_dir = os.path.join(full_category_dir, object_id)
             if not os.path.isdir(object_dir):
@@ -121,6 +123,7 @@ def iter_depth_objects(input_root: str) -> List[Tuple[str, str, List[str]]]:
         if not os.path.isdir(class_dir):
             continue
 
+        # 深度图目录结构是 `<class>/<object_id>/depth_XX.png`。
         for object_id in sorted(os.listdir(class_dir)):
             object_dir = os.path.join(class_dir, object_id)
             if not os.path.isdir(object_dir):
@@ -150,6 +153,7 @@ def encode_object_views(
 
     tensors = []
     for view_path in view_paths:
+        # RGB 和 Depth 走不同读取函数，但最终都变成 CLIP preprocess 可处理的 PIL 图。
         if modality == "rgb":
             image = load_rgb_image(view_path)
         else:
@@ -187,6 +191,7 @@ def main():
         input_root = RGB_VIEW_ROOT if args.modality == "rgb" else DEPTH_MAP_ROOT
 
     # 先恢复基础 CLIP，再注入 LoRA 参数
+    # checkpoint 里记录了训练时替换的 block 和模块后缀，推理阶段必须一致。
     _, model, preprocess = load_clip_model(
         checkpoint["clip_model"],
         device=device,

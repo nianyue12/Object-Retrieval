@@ -46,6 +46,7 @@ DEFAULT_SAVE_DIR = os.path.join(RESULT_DIR, "lora")
 
 def parse_args():
     """解析训练脚本命令行参数。"""
+    # LoRA 训练直接读原始 RGB/Depth 视图，因为它会修改 CLIP 视觉编码过程。
     parser = argparse.ArgumentParser(
         description="Train a visual LoRA adapter on CLIP for RGB/depth view classification."
     )
@@ -130,6 +131,7 @@ def load_depth_image(path: str) -> Image.Image:
     if depth_array.ndim == 3:
         depth_array = depth_array[..., 0]
 
+    # 深度图先归一化到 [0, 1]，再复制成 3 通道以适配 CLIP 图像预处理。
     if depth_array.max() > depth_array.min():
         depth_array = (depth_array - depth_array.min()) / (
             depth_array.max() - depth_array.min()
@@ -165,6 +167,7 @@ def build_view_samples(
         "missing_objects": 0,
     }
 
+    # 一个物体会展开成多个视图样本，LoRA 用视图级分类信号训练视觉分支。
     for cls, item in get_split_items(protocol, split_name):
         obj_id = os.path.splitext(item)[0]
         added = 0
@@ -260,6 +263,7 @@ def compute_logits(images, model, text_features):
     """计算图像特征与文本原型之间的分类 logits。"""
     image_features = model.encode_image(images)
     image_features = F.normalize(image_features, dim=-1)
+    # 文本原型固定，训练信号只通过图像编码器中的 LoRA 参数回传。
     logit_scale = model.logit_scale.exp().clamp(max=100.0)
     return logit_scale * image_features @ text_features.t()
 
@@ -286,6 +290,7 @@ def run_epoch(
     total_correct = 0
     total_count = 0
 
+    # 训练时 optimizer/scaler 不为空；验证时只前向计算指标。
     progress = tqdm(loader, desc=desc, leave=False)
     for images, labels in progress:
         images = images.to(device, non_blocking=True)
@@ -384,6 +389,7 @@ def main():
     )
     trainable_param_names = mark_only_lora_trainable(model)
 
+    # 注入 LoRA 后，只把 LoRA 参数交给优化器，其余 CLIP 权重保持冻结。
     # 构建 seen 类视图分类数据集
     train_dataset = ViewDataset(train_samples, preprocess=preprocess)
     val_dataset = ViewDataset(val_samples, preprocess=preprocess)

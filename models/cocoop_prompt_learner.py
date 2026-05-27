@@ -21,6 +21,8 @@ class MetaNet(nn.Module):
         if hidden_dim <= 0:
             raise ValueError("hidden_dim must be positive.")
 
+        # meta-net 是 CoCoOp 相比 CoOp 多出来的条件分支：
+        # 输入当前样本的视觉特征，输出一个用于调整 prompt 的偏置向量。
         self.net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(inplace=True),
@@ -72,6 +74,7 @@ class ConditionalPromptLearner(nn.Module):
 
         clip = get_clip_module()
         ctx = self._init_context(clip, clip_model)
+        # ctx 仍然是全局共享的 prompt 参数，meta_net 会为每个样本生成额外偏置。
         self.ctx = nn.Parameter(ctx)
         self.meta_net = MetaNet(
             input_dim=image_feature_dim,
@@ -89,6 +92,7 @@ class ConditionalPromptLearner(nn.Module):
             embedding = clip_model.token_embedding(tokenized_prompts).type(self.dtype)
 
         self.register_buffer("tokenized_prompts", tokenized_prompts)
+        # prefix / suffix 来自固定 prompt 骨架；可变化的部分只有中间的上下文段。
         self.register_buffer("token_prefix", embedding[:, :1, :])
         self.register_buffer("token_suffix", embedding[:, 1 + self.n_ctx :, :])
 
@@ -101,6 +105,7 @@ class ConditionalPromptLearner(nn.Module):
             2. 提供 ctx_init：从文本初始化，再按需要补齐长度
         """
         if not self.ctx_init.strip():
+            # 随机初始化共享上下文，后续由训练学习到更适合 seen 类的提示。
             ctx = torch.empty(
                 self.n_ctx,
                 self.ctx_dim,
@@ -110,6 +115,7 @@ class ConditionalPromptLearner(nn.Module):
             nn.init.normal_(ctx, std=0.02)
             return ctx
 
+        # 使用给定短语初始化 ctx，可以让 prompt 从人工语义先验开始训练。
         tokenized_ctx = clip.tokenize(self.ctx_init).to(self.device)
         eot_index = int(tokenized_ctx[0].argmax().item())
         with torch.no_grad():
@@ -157,8 +163,11 @@ class ConditionalPromptLearner(nn.Module):
             shape = (B, C, prompt_len, ctx_dim)
         """
         image_features = image_features.to(device=self.device, dtype=self.dtype)
+        # conditional_bias 的形状是 (B, ctx_dim)，表示每个样本自己的 prompt 调整量。
         conditional_bias = self.meta_net(image_features)
+        # 共享 ctx 加上样本条件偏置，得到每个样本专属的上下文 token。
         conditional_ctx = self.ctx.unsqueeze(0) + conditional_bias.unsqueeze(1)
+        # 再扩展到所有类别：每个样本都会生成 C 条类别 prompt。
         conditional_ctx = conditional_ctx.unsqueeze(1).expand(-1, self.n_cls, -1, -1)
 
         # 将 prompt 前缀、条件上下文和类别后缀拼起来
@@ -182,6 +191,7 @@ class ConditionalPromptLearner(nn.Module):
         """
         prompts = self(image_features)
         batch_size, n_cls, prompt_len, ctx_dim = prompts.shape
+        # 为了复用 TextEncoder，把 (B, C) 两个维度展平成一批 prompt。
         prompts = prompts.reshape(batch_size * n_cls, prompt_len, ctx_dim)
         tokenized_prompts = self.tokenized_prompts.unsqueeze(0).expand(
             batch_size, -1, -1
@@ -201,5 +211,6 @@ class ConditionalPromptLearner(nn.Module):
         else:
             text_features = text_encoder(prompts, tokenized_prompts)
 
+        # 编码后再还原成 (B, C, D)，表示每个样本对应所有类别的文本特征。
         text_features = text_features.reshape(batch_size, n_cls, -1)
         return F.normalize(text_features, dim=-1)

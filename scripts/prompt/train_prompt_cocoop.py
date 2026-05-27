@@ -39,6 +39,7 @@ from utils.protocol import get_split_items, load_protocol
 
 def parse_args():
     """解析 CoCoOp 训练参数。"""
+    # CoCoOp 在 CoOp 共享上下文之外，还训练根据样本特征生成偏置的 meta-net。
     parser = argparse.ArgumentParser(
         description="Train CoCoOp prompts on cached CLIP features."
     )
@@ -145,6 +146,7 @@ def load_split_features(
     feats = []
     labels = []
 
+    # 这里读取的是缓存特征，CoCoOp 的条件分支直接以这些特征作为输入。
     for cls, item in get_split_items(protocol, split_name):
         rgb_path = os.path.join(rgb_feat_root, cls, item)
         depth_path = os.path.join(depth_feat_root, cls, item)
@@ -193,6 +195,7 @@ def compute_logits(
     功能：计算 CoCoOp 条件文本特征下的分类 logits。
     """
     image_features = F.normalize(image_feats, dim=-1)
+    # prompt_learner 会为 batch 中每个样本生成一套条件式类别文本特征。
     text_features = prompt_learner.get_text_features(
         image_features,
         text_encoder,
@@ -226,6 +229,7 @@ def run_epoch(
 
     progress = tqdm(loader, desc=desc, leave=False)
     for batch_feats, batch_labels in progress:
+        # 大 batch 下文本 prompt 数量是 B*C，所以后面会用 prompt_chunk_size 控制显存。
         batch_feats = batch_feats.to(prompt_learner.ctx.device)
         batch_labels = batch_labels.to(prompt_learner.ctx.device)
 
@@ -353,6 +357,7 @@ def main():
         weight_decay=args.weight_decay,
     )
 
+    # eval_every 可以减少 CoCoOp 验证时动态文本编码带来的额外开销。
     best_val_acc = -1.0
     best_epoch = -1
     history = []

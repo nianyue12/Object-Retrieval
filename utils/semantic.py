@@ -98,6 +98,7 @@ def load_prompt_checkpoint(path: str, device) -> dict:
     """
     checkpoint = _safe_torch_load(path, device)
     prompt_mode = checkpoint.get("prompt_mode")
+    # 训练脚本保存的 checkpoint 需要标明 prompt 类型，推理时按类型恢复组件。
     if prompt_mode not in {"coop", "cocoop"}:
         raise ValueError(f"Unsupported prompt checkpoint mode: {prompt_mode}")
     if "ctx" not in checkpoint:
@@ -162,6 +163,7 @@ def build_text_prototypes(
     templates = templates or PROMPT_TEMPLATES
 
     # 加载 CLIP 模型
+    # fixed prompt 和 CoOp prompt 都复用同一个 CLIP 文本编码器。
     clip_module, model, _ = load_clip_model(
         clip_model,
         device=device,
@@ -220,6 +222,7 @@ def build_text_prototypes_for_sets(
     templates = templates or PROMPT_TEMPLATES
 
     # 只加载一次 CLIP，减少重复开销
+    # 多个类别集合共享同一个模型，避免重复加载显存。
     clip_module, model, _ = load_clip_model(
         clip_model,
         device=device,
@@ -300,6 +303,7 @@ def load_cocoop_prompt_components(
         )
 
     checkpoint_model = checkpoint.get("clip_model")
+    # prompt 是针对特定 CLIP backbone 训练的，型号不一致时直接报错。
     if checkpoint_model and checkpoint_model != clip_model:
         raise ValueError(
             f"Prompt checkpoint expects clip_model={checkpoint_model}, "

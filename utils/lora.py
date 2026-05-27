@@ -37,6 +37,8 @@ class LoRALinear(nn.Module):
         out_features = int(base_layer.out_features)
         device = base_layer.weight.device
         dtype = base_layer.weight.dtype
+        # LoRA 不直接训练完整权重 W，而是训练低秩增量 B @ A。
+        # A 负责把输入降到 rank 维，B 再把 rank 维映射回输出维度。
         self.lora_A = nn.Parameter(
             torch.empty(self.rank, in_features, device=device, dtype=dtype)
         )
@@ -47,6 +49,7 @@ class LoRALinear(nn.Module):
         nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
         nn.init.zeros_(self.lora_B)
 
+        # 基础线性层被冻结，训练时只更新 lora_A / lora_B 两组小参数。
         for param in self.base.parameters():
             param.requires_grad_(False)
 
@@ -60,6 +63,7 @@ class LoRALinear(nn.Module):
 
     def merged_weight(self) -> torch.Tensor:
         """返回基础权重和 LoRA 增量合并后的视图。"""
+        # 低秩增量的形状会恢复成和 base.weight 一样，才能与原权重相加。
         delta = self.lora_B @ self.lora_A
         delta = delta.to(
             device=self.base.weight.device,
@@ -78,6 +82,7 @@ class LoRALinear(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """前向输出 = 原层输出 + LoRA 增量。"""
+        # base_out 是冻结 CLIP 的原始输出；lora_update 是当前任务学到的补偿项。
         base_out = self.base(x)
         lora_hidden = F.linear(self.dropout(x), self.lora_A)
         lora_update = F.linear(lora_hidden, self.lora_B) * self.scaling
@@ -131,6 +136,7 @@ def _should_replace_module(
     if block_indices is not None and block_index not in set(block_indices):
         return False
 
+    # 只替换指定后缀的线性层，例如 MLP 投影层或注意力输出层。
     return any(module_name.endswith(suffix) for suffix in module_suffixes)
 
 
@@ -163,6 +169,7 @@ def apply_lora_to_clip(
         ):
             continue
 
+        # 找到目标 Linear 所属的父模块，然后用 LoRALinear 原地包住它。
         parent, child_name = _get_child_module(model, module_name)
         setattr(
             parent,
@@ -188,6 +195,7 @@ def mark_only_lora_trainable(model: nn.Module) -> List[str]:
     """
     功能：冻结全部参数，只保留 LoRA 参数可训练。
     """
+    # 先全局冻结，避免误训练 CLIP 原始参数。
     for param in model.parameters():
         param.requires_grad_(False)
 
@@ -195,6 +203,7 @@ def mark_only_lora_trainable(model: nn.Module) -> List[str]:
     for module_name, module in model.named_modules():
         if not isinstance(module, LoRALinear):
             continue
+        # 再只打开每个 LoRALinear 里的 A / B 矩阵。
         module.lora_A.requires_grad_(True)
         module.lora_B.requires_grad_(True)
         trainable.append(f"{module_name}.lora_A")
@@ -246,6 +255,7 @@ def load_lora_state_dict(model: nn.Module, state_dict: dict, strict: bool = True
                 f"expected {tuple(target.shape)}, got {tuple(value.shape)}."
             )
 
+        # checkpoint 中只保存 LoRA 增量参数，这里把它们拷回对应模块。
         with torch.no_grad():
             target.copy_(value.to(device=target.device, dtype=target.dtype))
         loaded.add(key)

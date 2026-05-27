@@ -8,7 +8,7 @@ from utils.clip_utils import get_clip_module
 
 class TextEncoder(nn.Module):
     """
-    功能：复用 CLIP 文本编码器，对 prompt embedding 做前向推理。
+    功能：复用 CLIP 文本编码器，把 prompt embedding 编码成文本特征。
     """
 
     def __init__(self, clip_model):
@@ -71,6 +71,7 @@ class PromptLearner(nn.Module):
 
         clip = get_clip_module()
         ctx = self._init_context(clip, clip_model)
+        # CoOp 的可训练参数就是这组共享上下文 token；CLIP 主体保持冻结。
         self.ctx = nn.Parameter(ctx)
 
         # 使用占位 token 先构造 prompt 骨架
@@ -83,6 +84,8 @@ class PromptLearner(nn.Module):
             embedding = clip_model.token_embedding(tokenized_prompts).type(self.dtype)
 
         self.register_buffer("tokenized_prompts", tokenized_prompts)
+        # token_prefix 通常是 SOS，token_suffix 包含类别词、标点和 EOT。
+        # forward 时只把中间的 X 段替换成可学习的 ctx。
         self.register_buffer("token_prefix", embedding[:, :1, :])
         self.register_buffer("token_suffix", embedding[:, 1 + self.n_ctx :, :])
 
@@ -91,6 +94,7 @@ class PromptLearner(nn.Module):
         功能：初始化共享上下文 `ctx`。
         """
         if not self.ctx_init:
+            # 没有给定文字初始化时，直接随机初始化 n_ctx 个上下文 token。
             ctx = torch.empty(
                 self.n_ctx,
                 self.ctx_dim,
@@ -100,6 +104,8 @@ class PromptLearner(nn.Module):
             nn.init.normal_(ctx, std=0.02)
             return ctx
 
+        # 给定 ctx_init 时，先把文字送入 CLIP token embedding，
+        # 再取出其中的文本 token 作为上下文初值。
         tokenized_ctx = clip.tokenize(self.ctx_init)
         tokenized_ctx = tokenized_ctx.to(clip_model.token_embedding.weight.device)
         eot_index = int(tokenized_ctx[0].argmax().item())
@@ -113,6 +119,7 @@ class PromptLearner(nn.Module):
             )
 
         if init_ctx.shape[0] < self.n_ctx:
+            # 如果初始化文字 token 数不够，用随机 token 补齐到 n_ctx。
             pad = torch.empty(
                 self.n_ctx - init_ctx.shape[0],
                 self.ctx_dim,
@@ -144,5 +151,7 @@ class PromptLearner(nn.Module):
         """
         功能：拼出每个类别对应的 prompt embedding。
         """
+        # 同一组 ctx 复制给所有类别，因此 CoOp 学到的是“类别共享”的提示上下文。
         ctx = self.ctx.unsqueeze(0).expand(self.n_cls, -1, -1)
+        # 最终 prompt = SOS + learnable ctx + class name / EOT 等后缀。
         return torch.cat([self.token_prefix, ctx, self.token_suffix], dim=1)

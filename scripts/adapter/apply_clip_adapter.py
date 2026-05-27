@@ -21,6 +21,7 @@ from models.clip_adapter import CLIPResidualAdapter
 
 
 def parse_args():
+    # 这个脚本只做推理式特征转换，不再训练 Adapter。
     parser = argparse.ArgumentParser(
         description="Apply a trained residual Adapter to cached CLIP features."
     )
@@ -33,12 +34,14 @@ def parse_args():
 
 
 def resolve_device(device_arg: str) -> torch.device:
+    # 命令行未指定时自动选择 CUDA/CPU。
     if device_arg:
         return torch.device(device_arg)
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def safe_torch_load(path: str, device: torch.device):
+    # weights_only 是新版 PyTorch 参数，旧版本不支持时回退到普通加载。
     try:
         return torch.load(path, map_location=device, weights_only=True)
     except TypeError:
@@ -46,6 +49,7 @@ def safe_torch_load(path: str, device: torch.device):
 
 
 def load_adapter(checkpoint: dict, device: torch.device) -> CLIPResidualAdapter:
+    # 根据 checkpoint 中记录的结构参数重建同尺寸 Adapter。
     adapter = CLIPResidualAdapter(
         dim=int(checkpoint["feature_dim"]),
         hidden_dim=int(checkpoint["hidden_dim"]),
@@ -64,9 +68,11 @@ def adapt_feature(
 ) -> np.ndarray:
     feature = np.asarray(feature, dtype=np.float32)
     if feature.ndim == 1:
+        # 单个物体特征补 batch 维度，Adapter 输出后再挤掉。
         tensor = torch.from_numpy(feature).unsqueeze(0).to(device)
         squeeze = True
     elif feature.ndim == 2:
+        # 多视图特征逐行适配，保持原来的视图维度。
         tensor = torch.from_numpy(feature).to(device)
         squeeze = False
     else:
@@ -81,6 +87,7 @@ def adapt_feature(
 
 
 def iter_feature_files(input_root: str):
+    # 维持 `<class>/<item>.npy` 目录结构，方便输出与输入一一对应。
     for class_name in sorted(os.listdir(input_root)):
         class_dir = os.path.join(input_root, class_name)
         if not os.path.isdir(class_dir):
@@ -106,6 +113,7 @@ def main():
     print(f"Output root: {args.output_root}")
     print(f"Device: {device}")
 
+    # 遍历所有缓存特征，逐个应用 Adapter 并写到新目录。
     for class_name, filename, input_path in iter_feature_files(args.input_root):
         class_output_dir = os.path.join(args.output_root, class_name)
         os.makedirs(class_output_dir, exist_ok=True)

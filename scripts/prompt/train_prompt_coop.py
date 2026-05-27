@@ -37,6 +37,7 @@ from utils.protocol import get_split_items, load_protocol
 
 def parse_args():
     """解析 CoOp 训练参数。"""
+    # CoOp 训练只更新 prompt 上下文 token，其余 CLIP 参数保持冻结。
     parser = argparse.ArgumentParser(
         description="Train a shared CoOp prompt on seen classes using cached CLIP features."
     )
@@ -106,6 +107,7 @@ def load_split_features(
     feats = []
     labels = []
 
+    # 训练/验证都基于协议中的 seen split，标签映射只覆盖 seen 类。
     for cls, item in get_split_items(protocol, split_name):
         rgb_path = os.path.join(rgb_feat_root, cls, item)
         depth_path = os.path.join(depth_feat_root, cls, item)
@@ -156,6 +158,7 @@ def compute_logits(
     text_features = text_encoder(prompts, prompt_learner.tokenized_prompts)
     text_features = F.normalize(text_features, dim=-1)
     image_features = F.normalize(image_feats, dim=-1)
+    # 使用 CLIP 的 logit_scale 保持与原始 CLIP 分类打分尺度一致。
     logit_scale = clip_model.logit_scale.exp().clamp(max=100.0)
     return logit_scale * image_features @ text_features.t()
 
@@ -179,6 +182,7 @@ def run_epoch(
     total_count = 0
 
     for batch_feats, batch_labels in loader:
+        # batch_feats 是预先缓存好的视觉特征，不需要再次跑图像编码器。
         batch_feats = batch_feats.to(prompt_learner.ctx.device)
         batch_labels = batch_labels.to(prompt_learner.ctx.device)
 
@@ -289,6 +293,7 @@ def main():
         weight_decay=args.weight_decay,
     )
 
+    # 验证集 top1 最高的 prompt 上下文会被保存为最终 checkpoint。
     best_val_acc = -1.0
     best_epoch = -1
     history = []
