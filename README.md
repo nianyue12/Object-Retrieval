@@ -9,9 +9,9 @@ Main pipeline:
 - project the point cloud into `12` depth maps with rendered camera parameters
 - extract pooled CLIP features for RGB views and depth maps
 - evaluate unseen retrieval under a fixed `seen/unseen` protocol
-- run zero-training visual-language retrieval on top of cached RGB-depth features
-- optionally train CoOp or CoCoOp prompts on seen classes and reuse them for unseen retrieval
-- optionally train a shared feature Adapter or a visual LoRA branch and reuse the adapted features for unseen retrieval
+- build an RGB+Depth Fusion visual retrieval baseline
+- train PEFT modules only on seen classes
+- evaluate safe Fusion+PEFT retrieval on unseen query-gallery splits without using unseen class names or unseen labels for ranking
 
 ## Main Protocol
 
@@ -24,6 +24,14 @@ Main pipeline:
 Fixed protocol file:
 
 - `configs/splits/shapenet_seen10_unseen40_seed0.json`
+
+## Safe Evaluation Rule
+
+All current main PEFT results follow this rule:
+
+- Training may use `train_seen` labels and validation may use `val_seen` labels.
+- Test-time ranking must not use unseen class names, unseen labels, or gallery labels.
+- Unseen labels are used only after ranking, for `mAP`, `NDCG@100`, `ANMRR`, and `Recall@100`.
 
 ## Main Experiments
 
@@ -48,44 +56,37 @@ Fixed protocol file:
 - Evaluation: `query_unseen -> gallery_unseen`
 - Metrics: `mAP`, `NDCG@100`, `ANMRR`, `Recall@100`
 
-### 4. Visual-Language Retrieval
+### 4. Fusion + Adapter visual-only retrieval
 
-- Backbone: cached RGB CLIP features + cached depth CLIP features
-- Text branch: CLIP text prototypes built from unseen class names with prompt ensembling
-- Retrieval score: global blend of visual cosine similarity and text-posterior similarity
-- No extra training: zero-training visual-language reranking on top of cached features
-- Recommended default: `fusion + unseen text bank + prob similarity + global blend + semantic_weight=0.25`
-- Metrics: `mAP`, `NDCG@100`, `ANMRR`, `Recall@100`
+- Base feature: `RGB+Depth Fusion`
+- Adapter position: after object-level Fusion features
+- Training: seen-class supervision on `train_seen`
+- Training script: `scripts/adapter/train_fusion_adapter.py`
+- Ranking: cosine similarity of post-fusion Adapter features
+- Test-time text anchors: none
+- Legacy `scripts/adapter/train_clip_adapter.py` adapts RGB and depth before fusion and is not used for this main result.
 
-### 5. Visual-Language Retrieval + CoOp
+### 5. Fusion + LoRA visual-only retrieval
 
-- Visual branch: cached RGB+Depth fusion CLIP features
-- Prompt tuning: shared CoOp prompt learned on `train_seen`
-- Evaluation: `query_unseen -> gallery_unseen`
-- Metrics: `mAP`, `NDCG@100`, `ANMRR`, `Recall@100`
+- Base feature: RGB and depth features re-extracted by a LoRA-adapted CLIP image encoder
+- LoRA target: selected CLIP visual transformer blocks
+- Training: seen-class supervision on `train_seen`
+- Ranking: cosine similarity of LoRA-adapted Fusion features
+- Test-time text anchors: none
 
-### 6. Visual-Language Retrieval + CoCoOp
+### 6. Fusion + CoOp Seen-anchor retrieval
 
-- Visual branch: cached RGB+Depth fusion CLIP features
-- Prompt tuning: conditional CoCoOp prompt learned on `train_seen`
-- Evaluation: `query_unseen -> gallery_unseen`
-- Metrics: `mAP`, `NDCG@100`, `ANMRR`, `Recall@100`
+- Prompt tuning: shared CoOp context learned on `train_seen`
+- Test-time text anchors: seen class names only
+- Ranking: Fusion visual similarity plus seen-anchor response similarity
+- Unseen class names are not used for ranking
 
-### 7. Visual-Language Retrieval + Adapter
+### 7. Fusion + CoCoOp Seen-anchor retrieval
 
-- Visual branch: cached RGB+Depth CLIP features adapted by a shared residual feature Adapter
-- Adapter: lightweight two-layer residual MLP trained on `train_seen`
-- Text branch: fixed CLIP text prototypes
-- Evaluation: `query_unseen -> gallery_unseen`
-- Metrics: `mAP`, `NDCG@100`, `ANMRR`, `Recall@100`
-
-### 8. Visual-Language Retrieval + LoRA
-
-- Visual branch: RGB+Depth features extracted from a CLIP visual encoder adapted with LoRA
-- LoRA target: selected CLIP visual transformer blocks on seen classes
-- Text branch: fixed CLIP text prototypes
-- Evaluation: `query_unseen -> gallery_unseen`
-- Metrics: `mAP`, `NDCG@100`, `ANMRR`, `Recall@100`
+- Prompt tuning: conditional CoCoOp prompt learner trained on `train_seen`
+- Test-time text anchors: seen class names only
+- Ranking: Fusion visual similarity plus conditional seen-anchor response similarity
+- Unseen class names are not used for ranking
 
 ## Main Metric Style
 
@@ -95,48 +96,75 @@ Fixed protocol file:
 
 ## Current Main Results
 
+Base visual retrieval:
+
+| Method | Input | mAP | NDCG@100 | ANMRR | Recall@100 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| RGB | RGB multi-view | 0.5512 | 0.7582 | 0.4577 | 0.2294 |
+| Depth | Point-cloud depth maps | 0.4762 | 0.6896 | 0.5284 | 0.1805 |
+| RGB+Depth Fusion | RGB + Depth | 0.5701 | 0.7709 | 0.4418 | 0.2363 |
+
+Safe Fusion+PEFT retrieval:
+
 | Method | mAP | NDCG@100 | ANMRR | Recall@100 |
 | --- | ---: | ---: | ---: | ---: |
-| RGB-CLIP | 0.5512 | 0.7582 | 0.4577 | 0.2294 |
-| Depth-CLIP | 0.4762 | 0.6896 | 0.5284 | 0.1805 |
 | RGB+Depth Fusion | 0.5701 | 0.7709 | 0.4418 | 0.2363 |
-| VL Retrieval (fixed prompt) | 0.6073 | 0.7837 | 0.4086 | 0.2476 |
-| VL Retrieval + CoOp | 0.6376 | 0.7941 | 0.3809 | 0.2554 |
-| VL Retrieval + CoCoOp | 0.6202 | 0.7877 | 0.3970 | 0.2495 |
-| VL Retrieval + Adapter | 0.6207 | 0.7889 | 0.3981 | 0.2517 |
-| VL Retrieval + LoRA | 0.6290 | 0.7990 | 0.3924 | 0.2558 |
+| Fusion + Adapter | 0.5839 | 0.7763 | 0.4304 | 0.2412 |
+| Fusion + LoRA | 0.6073 | 0.7914 | 0.4118 | 0.2497 |
+| Fusion + CoOp Seen-anchor | 0.5904 | 0.7781 | 0.4251 | 0.2419 |
+| Fusion + CoCoOp Seen-anchor | 0.5751 | 0.7736 | 0.4374 | 0.2382 |
 
 Result files:
 
-- `results/unseen_retrieval/rgb_zero_shot_both.json`
-- `results/unseen_retrieval/depth_zero_shot_both.json`
-- `results/unseen_retrieval/fusion_zero_shot_alpha0p50_both.json`
-- `results/unseen_retrieval/vl_fusion_unseen_confidence_prob_global_blend_sw0p25_a0p50_hgm2r.json`
-- `results/unseen_retrieval/vl_fusion_coop_ctx8_random_hgm2r.json`
-- `results/unseen_retrieval/vl_fusion_cocoop_ctx8_random_seed0_safe_hgm2r.json`
-- `results/unseen_retrieval/vl_fusion_adapter_fixed_hgm2r.json`
-- `results/unseen_retrieval/vl_fusion_lora_r8_seed0_fixed_hgm2r.json`
+- `results/fusion_baseline_hgm2r.json`
+- `results/fusion_adapter_visual_only_hgm2r.json`
+- `results/fusion_lora_visual_only_hgm2r.json`
+- `results/fusion_coop_seen_anchor_w0p25_hgm2r.json`
+- `results/fusion_cocoop_seen_anchor_w0p05_bhat_p0p75_hgm2r.json`
+- `results/peft_summary.csv`
 
-Compared with the zero-shot RGB+Depth baseline, VL Retrieval improves:
+Compared with the RGB+Depth Fusion baseline:
 
-- `mAP`: `+0.0371`
-- `NDCG@100`: `+0.0128`
-- `ANMRR`: `-0.0332`
-- `Recall@100`: `+0.0113`
+- `Fusion + Adapter`: `mAP +0.0138`, `NDCG@100 +0.0054`, `ANMRR -0.0114`
+- `Fusion + LoRA`: `mAP +0.0372`, `NDCG@100 +0.0205`, `ANMRR -0.0301`
+- `Fusion + CoOp Seen-anchor`: `mAP +0.0203`, `NDCG@100 +0.0072`, `ANMRR -0.0167`
+- `Fusion + CoCoOp Seen-anchor`: `mAP +0.0049`, `NDCG@100 +0.0027`, `ANMRR -0.0044`
 
-Compared with fixed-prompt VL Retrieval, parameter-efficient adaptation improves:
+## Main Ablations
 
-- `CoOp`: `mAP +0.0303`, `NDCG@100 +0.0104`, `ANMRR -0.0278`, `Recall@100 +0.0079`
-- `CoCoOp`: `mAP +0.0130`, `NDCG@100 +0.0040`, `ANMRR -0.0117`, `Recall@100 +0.0020`
-- `Adapter`: `mAP +0.0134`, `NDCG@100 +0.0052`, `ANMRR -0.0105`, `Recall@100 +0.0041`
-- `LoRA`: `mAP +0.0217`, `NDCG@100 +0.0153`, `ANMRR -0.0162`, `Recall@100 +0.0082`
+Fusion weight:
+
+| alpha | Meaning | mAP | NDCG@100 | ANMRR |
+| ---: | --- | ---: | ---: | ---: |
+| 0.00 | Depth only | 0.4762 | 0.6896 | 0.5284 |
+| 0.25 | More depth weight | 0.5430 | 0.7544 | 0.4667 |
+| 0.50 | Balanced RGB and depth | 0.5701 | 0.7709 | 0.4418 |
+| 0.75 | More RGB weight | 0.5554 | 0.7615 | 0.4544 |
+| 1.00 | RGB only | 0.5512 | 0.7582 | 0.4577 |
+
+CoCoOp Seen-anchor sensitivity:
+
+| Setting | mAP | NDCG@100 | ANMRR |
+| --- | ---: | ---: | ---: |
+| `w=0.25, cosine` | 0.5492 | 0.7531 | 0.4642 |
+| `w=0.03, Bhattacharyya, p=0.75` | 0.5732 | 0.7727 | 0.4391 |
+| `w=0.05, Bhattacharyya, p=0.50` | 0.5724 | 0.7722 | 0.4398 |
+| `w=0.05, Bhattacharyya, p=0.75` | 0.5751 | 0.7736 | 0.4374 |
+
+Post-fusion Adapter hidden dimension:
+
+| hidden_dim | mAP | NDCG@100 | ANMRR |
+| ---: | ---: | ---: | ---: |
+| 64 | 0.5838 | 0.7761 | 0.4303 |
+| 128 | 0.5839 | 0.7763 | 0.4304 |
+| 256 | 0.5819 | 0.7755 | 0.4324 |
 
 ## Project Layout
 
 - `tools/`: preprocessing utilities, including multi-view rendering, point-cloud sampling, and point-cloud-to-depth projection.
 - `scripts/`: experiment entry points grouped into `scripts/main`, `scripts/prompt`, `scripts/adapter`, `scripts/os_mn40_core`, and `scripts/lora`.
 - `models/`: lightweight CLIP wrappers plus CoOp/CoCoOp prompt learner modules and the residual feature Adapter.
-- `utils/`: shared helpers for CLIP loading, protocol handling, retrieval metrics, and semantic reranking.
+- `utils/`: shared helpers for CLIP loading, feature loading, protocol handling, retrieval metrics, and safety metadata.
 - `configs/`: default paths and saved protocol splits.
 - `results/`: experiment outputs. Direct script outputs currently go to `results/unseen_retrieval`, `results/prompt_tuning`, `results/adapter`, and `results/lora`.
 - `datasets/`: reserved for dataset notes, manifests, and benchmark adapters. Raw datasets are not stored in this repository.
@@ -154,8 +182,6 @@ Current external roots used by the project:
 - Point-cloud-derived depth maps: `D:/1Ahaha/AA3d/depth_maps`
 - RGB CLIP features: `D:/1Ahaha/AA3d/output_224_clip_feat`
 - Depth CLIP features: `D:/1Ahaha/AA3d/output_feat_depth_maps`
-- Adapter RGB features: `D:/1Ahaha/AA3d/output_224_clip_feat_adapter_h128`
-- Adapter Depth features: `D:/1Ahaha/AA3d/output_feat_depth_maps_adapter_h128`
 - LoRA RGB features: `D:/1Ahaha/AA3d/output_224_clip_feat_lora_r8`
 - LoRA Depth features: `D:/1Ahaha/AA3d/output_feat_depth_maps_lora_r8`
 
@@ -164,6 +190,7 @@ Current external roots used by the project:
 Current script outputs remain unchanged for compatibility:
 
 - `results/unseen_retrieval/`: retrieval JSON outputs written by evaluation scripts
+- `results/`: safe Fusion+PEFT JSON summaries from `run_fusion_peft_retrieval.py`
 - `results/prompt_tuning/`: CoOp and CoCoOp checkpoints plus training summaries
 - `results/adapter/`: Adapter checkpoints plus training summaries
 - `results/lora/`: LoRA checkpoints plus training summaries
@@ -205,54 +232,46 @@ python scripts/main/run_unseen_retrieval.py --mode depth --metric_style hgm2r
 python scripts/main/run_unseen_retrieval.py --mode fusion --metric_style hgm2r
 ```
 
-Run zero-training visual-language retrieval:
+Validate the safe Fusion baseline with the new PEFT evaluator:
 
 ```bash
-python scripts/main/run_vl_retrieval.py --mode fusion --metric_style hgm2r
+python scripts/main/run_fusion_peft_retrieval.py --method fusion --metric_style hgm2r --output_dir results --save_name fusion_baseline_hgm2r.json
 ```
 
-Train a first-stage shared CoOp prompt on seen classes:
+Train a post-fusion Adapter on seen classes:
+
+```bash
+python scripts/adapter/train_fusion_adapter.py --epochs 20 --hidden_dim 128 --save_name fusion_post_adapter_h128_seed0.pt
+```
+
+Run safe Adapter visual-only retrieval:
+
+```bash
+python scripts/main/run_fusion_peft_retrieval.py --method adapter --adapter_ckpt results/adapter/fusion_post_adapter_h128_seed0.pt --metric_style hgm2r --output_dir results --save_name fusion_adapter_visual_only_hgm2r.json
+```
+
+Train a shared CoOp prompt on seen classes:
 
 ```bash
 python scripts/prompt/train_prompt_coop.py --mode fusion --epochs 20 --n_ctx 8 --ctx_init " " --save_name coop_fusion_nctx8_random_seed0.pt
 ```
 
-Run visual-language retrieval with the learned CoOp prompt:
+Run safe CoOp Seen-anchor retrieval:
 
 ```bash
-python scripts/main/run_vl_retrieval.py --mode fusion --prompt_mode coop --prompt_ckpt results/prompt_tuning/coop_fusion_nctx8_random_seed0.pt --metric_style hgm2r --save_name vl_fusion_coop_ctx8_random_hgm2r.json
+python scripts/main/run_fusion_peft_retrieval.py --method coop_seen_anchor --prompt_ckpt results/prompt_tuning/coop_fusion_nctx8_random_seed0.pt --seen_anchor_weight 0.25 --metric_style hgm2r --output_dir results --save_name fusion_coop_seen_anchor_w0p25_hgm2r.json
 ```
 
-Train a first-stage CoCoOp prompt with cached fusion features:
+Train a CoCoOp prompt on seen classes:
 
 ```bash
 python scripts/prompt/train_prompt_cocoop.py --mode fusion --epochs 20 --n_ctx 8 --ctx_init " " --meta_hidden_dim 64 --batch_size 16 --prompt_chunk_size 64 --save_name cocoop_fusion_nctx8_random_seed0_safe.pt
 ```
 
-Run visual-language retrieval with the learned CoCoOp prompt:
+Run safe CoCoOp Seen-anchor retrieval:
 
 ```bash
-python scripts/main/run_vl_retrieval.py --mode fusion --prompt_mode cocoop --prompt_ckpt results/prompt_tuning/cocoop_fusion_nctx8_random_seed0_safe.pt --prompt_batch_size 4 --prompt_chunk_size 8 --metric_style hgm2r --save_name vl_fusion_cocoop_ctx8_random_seed0_safe_hgm2r.json
-```
-
-Train a shared feature Adapter on cached RGB+Depth CLIP features:
-
-```bash
-python scripts/adapter/train_clip_adapter.py --mode fusion --epochs 20 --batch_size 256 --hidden_dim 128 --dropout 0.1 --residual_scale 0.2 --save_name clip_adapter_fusion_h128_seed0.pt
-```
-
-Apply the learned Adapter to cached RGB and depth features:
-
-```bash
-python scripts/adapter/apply_clip_adapter.py --adapter_ckpt results/adapter/clip_adapter_fusion_h128_seed0.pt --input_root D:/1Ahaha/AA3d/output_224_clip_feat --output_root D:/1Ahaha/AA3d/output_224_clip_feat_adapter_h128
-python scripts/adapter/apply_clip_adapter.py --adapter_ckpt results/adapter/clip_adapter_fusion_h128_seed0.pt --input_root D:/1Ahaha/AA3d/output_feat_depth_maps --output_root D:/1Ahaha/AA3d/output_feat_depth_maps_adapter_h128
-```
-
-Run unseen retrieval with Adapter-adapted features:
-
-```bash
-python scripts/main/run_unseen_retrieval.py --mode fusion --rgb_feat_root D:/1Ahaha/AA3d/output_224_clip_feat_adapter_h128 --depth_feat_root D:/1Ahaha/AA3d/output_feat_depth_maps_adapter_h128 --metric_style hgm2r --save_name fusion_zero_shot_alpha0p50_adapter_h128_hgm2r.json
-python scripts/main/run_vl_retrieval.py --mode fusion --rgb_feat_root D:/1Ahaha/AA3d/output_224_clip_feat_adapter_h128 --depth_feat_root D:/1Ahaha/AA3d/output_feat_depth_maps_adapter_h128 --metric_style hgm2r --save_name vl_fusion_adapter_fixed_hgm2r.json
+python scripts/main/run_fusion_peft_retrieval.py --method cocoop_seen_anchor --prompt_ckpt results/prompt_tuning/cocoop_fusion_nctx8_random_seed0_safe.pt --seen_anchor_weight 0.05 --seen_anchor_similarity bhattacharyya --seen_anchor_power 0.75 --prompt_batch_size 4 --prompt_chunk_size 8 --metric_style hgm2r --output_dir results --save_name fusion_cocoop_seen_anchor_w0p05_bhat_p0p75_hgm2r.json
 ```
 
 Train a visual LoRA branch on CLIP and save the checkpoint:
@@ -268,18 +287,25 @@ python scripts/lora/extract_clip_features_lora.py --lora_ckpt results/lora/clip_
 python scripts/lora/extract_clip_features_lora.py --lora_ckpt results/lora/clip_lora_fusion_r8_seed0.pt --modality depth --output_root D:/1Ahaha/AA3d/output_feat_depth_maps_lora_r8
 ```
 
-Run unseen retrieval with LoRA-adapted features:
+Run safe LoRA visual-only retrieval:
 
 ```bash
-python scripts/main/run_unseen_retrieval.py --mode fusion --rgb_feat_root D:/1Ahaha/AA3d/output_224_clip_feat_lora_r8 --depth_feat_root D:/1Ahaha/AA3d/output_feat_depth_maps_lora_r8 --metric_style hgm2r --save_name fusion_zero_shot_alpha0p50_lora_r8_seed0_hgm2r.json
-python scripts/main/run_vl_retrieval.py --mode fusion --rgb_feat_root D:/1Ahaha/AA3d/output_224_clip_feat_lora_r8 --depth_feat_root D:/1Ahaha/AA3d/output_feat_depth_maps_lora_r8 --metric_style hgm2r --save_name vl_fusion_lora_r8_seed0_fixed_hgm2r.json
+python scripts/main/run_fusion_peft_retrieval.py --method lora --lora_rgb_feat_root D:/1Ahaha/AA3d/output_224_clip_feat_lora_r8 --lora_depth_feat_root D:/1Ahaha/AA3d/output_feat_depth_maps_lora_r8 --metric_style hgm2r --output_dir results --save_name fusion_lora_visual_only_hgm2r.json
 ```
+
+Summarize safe PEFT JSON files:
+
+```bash
+python scripts/main/summarize_fusion_peft_results.py --result_dir results --output results/peft_summary.csv --strict_safety
+```
+
+Legacy note: `scripts/main/run_vl_retrieval.py` is kept only for compatibility with earlier exploratory experiments and is not used for the safe main results above.
 
 If you need both the main `HGM2R-style` metrics and the older compatibility metrics in the same file, use:
 
 ```bash
 python scripts/main/run_unseen_retrieval.py --mode fusion --metric_style both
-python scripts/main/run_vl_retrieval.py --mode fusion --metric_style both
+python scripts/main/run_fusion_peft_retrieval.py --method fusion --metric_style both --output_dir results
 ```
 
 Key outputs:
@@ -287,12 +313,11 @@ Key outputs:
 - `results/unseen_retrieval/rgb_zero_shot_hgm2r.json` or `rgb_zero_shot_both.json`
 - `results/unseen_retrieval/depth_zero_shot_hgm2r.json` or `depth_zero_shot_both.json`
 - `results/unseen_retrieval/fusion_zero_shot_alpha0p50_hgm2r.json` or `fusion_zero_shot_alpha0p50_both.json`
-- `results/unseen_retrieval/vl_fusion_unseen_confidence_prob_global_blend_sw0p25_a0p50_hgm2r.json`
-- `results/unseen_retrieval/vl_fusion_coop_ctx8_random_hgm2r.json`
-- `results/unseen_retrieval/vl_fusion_cocoop_ctx8_random_seed0_safe_hgm2r.json`
-- `results/adapter/clip_adapter_fusion_h128_seed0.pt` and `clip_adapter_fusion_h128_seed0.json`
-- `results/unseen_retrieval/fusion_zero_shot_alpha0p50_adapter_h128_hgm2r.json`
-- `results/unseen_retrieval/vl_fusion_adapter_fixed_hgm2r.json`
+- `results/fusion_baseline_hgm2r.json`
+- `results/adapter/fusion_post_adapter_h128_seed0.pt` and `fusion_post_adapter_h128_seed0.json`
+- `results/fusion_adapter_visual_only_hgm2r.json`
 - `results/lora/clip_lora_fusion_r8_seed0.pt` and `clip_lora_fusion_r8_seed0.json`
-- `results/unseen_retrieval/fusion_zero_shot_alpha0p50_lora_r8_seed0_hgm2r.json`
-- `results/unseen_retrieval/vl_fusion_lora_r8_seed0_fixed_hgm2r.json`
+- `results/fusion_lora_visual_only_hgm2r.json`
+- `results/fusion_coop_seen_anchor_w0p25_hgm2r.json`
+- `results/fusion_cocoop_seen_anchor_w0p05_bhat_p0p75_hgm2r.json`
+- `results/peft_summary.csv`
