@@ -23,6 +23,7 @@ def batch_sample_category(category_name, category_input_dir):
     功能：处理单个类别下的所有 GLB 文件，并返回统计结果。
     """
     # 1. 构造输出路径
+    # 每个类别单独建目录，输出结构与 ShapeNet 原始类别结构一致。
     category_output_dir = os.path.join(PC_OUTPUT_ROOT, category_name)
     os.makedirs(category_output_dir, exist_ok=True)
 
@@ -41,6 +42,7 @@ def batch_sample_category(category_name, category_input_dir):
         }
 
     # 3. 过滤已采样的文件（断点续采）
+    # 已经存在 .npy 的模型不会重复采样，便于中断后继续跑。
     existing_npy = [f.replace(".npy", ".glb") for f in os.listdir(category_output_dir) if f.endswith(".npy")]
     existing_count = len(existing_npy)
     to_process = [f for f in glb_files if f not in existing_npy]
@@ -73,6 +75,7 @@ def batch_sample_category(category_name, category_input_dir):
             if pc.shape[0] >= N_SAMPLE_POINTS:
                 pc = pc[numpy.random.permutation(len(pc))[:N_SAMPLE_POINTS]]
             elif pc.shape[0] < N_SAMPLE_POINTS:
+                # 点数不足时从已有点中随机重复，保持固定输入点数。
                 pc = numpy.concatenate([pc, pc[numpy.random.randint(len(pc), size=[N_SAMPLE_POINTS - len(pc)])]])
 
             # 仅保留 XYZ
@@ -131,6 +134,7 @@ if __name__ == "__main__":
     # 2. 逐个处理所有类别，并收集汇总统计
     summary_stats = []
     for category_name, category_path in all_categories:
+        # 每个类别独立统计，最后再汇总全局成功/失败数量。
         stats = batch_sample_category(category_name, category_path)
         summary_stats.append(stats)
     

@@ -11,6 +11,7 @@ import matplotlib.pyplot as plotlib
 
 def get_bytes(x: str):
     import io, requests
+    # 从 URL 读取二进制内容，并包装成文件对象供图像读取函数使用。
     return io.BytesIO(requests.get(x).content)
 
 
@@ -23,6 +24,7 @@ def get_image(x: str):
 
 def model_to_pc(mesh: trimesh.Trimesh, n_sample_points=2048):
     f32 = numpy.float32
+    # 根据表面积估计采样半径，尽量得到分布均匀的表面点。
     rad = numpy.sqrt(mesh.area / (3 * n_sample_points))
     for _ in range(24):
         pcd, face_idx = trimesh.sample.sample_surface_even(mesh, n_sample_points, rad)
@@ -34,6 +36,7 @@ def model_to_pc(mesh: trimesh.Trimesh, n_sample_points=2048):
     if isinstance(mesh.visual, trimesh.visual.ColorVisuals):
         rgba = mesh.visual.face_colors[face_idx]
     elif isinstance(mesh.visual, trimesh.visual.TextureVisuals):
+        # 纹理材质需要先把采样点转换成 UV 坐标，再从贴图里取颜色。
         bc = trimesh.proximity.points_to_barycentric(mesh.triangles[face_idx], pcd)
         if mesh.visual.uv is None or len(mesh.visual.uv) < mesh.faces[face_idx].max():
             uv = numpy.zeros([len(bc), 2])
@@ -73,6 +76,7 @@ def model_to_pc(mesh: trimesh.Trimesh, n_sample_points=2048):
 
 def trimesh_to_pc(scene_or_mesh):
     if isinstance(scene_or_mesh, trimesh.Scene):
+        # glb 可能包含多个 mesh 节点，需要把场景里的几何体逐个取出并合并采样。
         meshes = []
         for node_name in scene_or_mesh.graph.nodes_geometry:
             # which geometry does this node refer to
@@ -90,6 +94,7 @@ def trimesh_to_pc(scene_or_mesh):
             raise ValueError("Bad geometry: total area too small (< 1e-6)")
         pcs = []
         for geometry in meshes:
+            # 按表面积比例给每个子 mesh 分配采样点数。
             pcs.append(model_to_pc(geometry, max(1, round(geometry.area / total_area * 2048))))
         if not len(pcs):
             raise ValueError("Unsupported mesh object: no triangles found")
@@ -130,6 +135,7 @@ if __name__ == "__main__":
     print("Converting to point cloud...")
     pc = trimesh_to_pc(mesh)
 
+    # 采样点数不足时用重复采样补齐，保证下游脚本输入维度固定。
     if pc.shape[0] >= 2048:
             pc = pc[numpy.random.permutation(len(pc))[:2048]]
     elif pc.shape[0] == 0:

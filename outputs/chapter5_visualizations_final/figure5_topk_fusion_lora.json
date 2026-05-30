@@ -1,0 +1,330 @@
+{
+  "figure": "Top-K retrieval comparison",
+  "protocol_path": "D:\\1Ahaha\\AA3d\\3D-Data-Processing-Toolkit\\configs\\splits\\shapenet_seen10_unseen40_seed0.json",
+  "methods": [
+    "Fusion baseline",
+    "Fusion+LoRA"
+  ],
+  "top_k": 5,
+  "selection_rule": "Balanced case selection: one strong-improvement query (Fusion hits=0, LoRA hits=4-5), one moderate-improvement query (Fusion hits=1-2, LoRA hits=3-4), and one hard-but-improved query (Fusion hits=1-2, LoRA hits=2-3), with distinct classes preferred.",
+  "selected_query_indices": [
+    7165,
+    7016,
+    358
+  ],
+  "caption": "图5-X 不同方法的开放集三维物体 Top-K 检索结果可视化。蓝色边框表示查询样本，绿色边框表示正确检索结果，红色边框表示错误检索结果。",
+  "queries": [
+    {
+      "query_label": "Query 1",
+      "query_index": 7165,
+      "class_name": "pillow",
+      "item_name": "49cfb88c1291a152fd5b65552e5580b6.npy",
+      "fusion_baseline": {
+        "query_index": 7165,
+        "class_name": "pillow",
+        "item_name": "49cfb88c1291a152fd5b65552e5580b6.npy",
+        "ap": 0.06661801657500566,
+        "hits_at_k": 0,
+        "topk": [
+          {
+            "rank": 1,
+            "gallery_index": 2374,
+            "class_name": "vessel",
+            "item_name": "9a6b9049576b97649bbc565383eee97c.npy",
+            "score": 0.9799932241439819,
+            "is_correct": false
+          },
+          {
+            "rank": 2,
+            "gallery_index": 1921,
+            "class_name": "vessel",
+            "item_name": "b1dea53e9995486c1b4a375734e87fc5.npy",
+            "score": 0.9787891507148743,
+            "is_correct": false
+          },
+          {
+            "rank": 3,
+            "gallery_index": 2721,
+            "class_name": "vessel",
+            "item_name": "e0b49aa20792f2fdc99bbfcf5650bf52.npy",
+            "score": 0.9787071347236633,
+            "is_correct": false
+          },
+          {
+            "rank": 4,
+            "gallery_index": 1941,
+            "class_name": "vessel",
+            "item_name": "99102724561012729ebc23acefb248a.npy",
+            "score": 0.9785724878311157,
+            "is_correct": false
+          },
+          {
+            "rank": 5,
+            "gallery_index": 2485,
+            "class_name": "vessel",
+            "item_name": "edb4574369f95b50689cbb453f479f9f.npy",
+            "score": 0.9779294729232788,
+            "is_correct": false
+          }
+        ]
+      },
+      "fusion_lora": {
+        "query_index": 7165,
+        "class_name": "pillow",
+        "item_name": "49cfb88c1291a152fd5b65552e5580b6.npy",
+        "ap": 0.7111295755750842,
+        "hits_at_k": 5,
+        "topk": [
+          {
+            "rank": 1,
+            "gallery_index": 16692,
+            "class_name": "pillow",
+            "item_name": "4ae37fde7b123dab5dc3653f8341633a.npy",
+            "score": 0.8455308675765991,
+            "is_correct": true
+          },
+          {
+            "rank": 2,
+            "gallery_index": 16719,
+            "class_name": "pillow",
+            "item_name": "ef5ee3879df49ce7f5b2cf5056edd6db.npy",
+            "score": 0.8417233228683472,
+            "is_correct": true
+          },
+          {
+            "rank": 3,
+            "gallery_index": 16711,
+            "class_name": "pillow",
+            "item_name": "24dfe6ef933ae9692257a9702919f3a.npy",
+            "score": 0.8407418727874756,
+            "is_correct": true
+          },
+          {
+            "rank": 4,
+            "gallery_index": 16669,
+            "class_name": "pillow",
+            "item_name": "3b5e274f653258a737f437b479038901.npy",
+            "score": 0.8376939296722412,
+            "is_correct": true
+          },
+          {
+            "rank": 5,
+            "gallery_index": 16717,
+            "class_name": "pillow",
+            "item_name": "530cc7dd793df95f8f5ae2c97614087a.npy",
+            "score": 0.8360481262207031,
+            "is_correct": true
+          }
+        ]
+      }
+    },
+    {
+      "query_label": "Query 2",
+      "query_index": 7016,
+      "class_name": "guitar",
+      "item_name": "2cbc0faddf227502bbc745a3524d966b.npy",
+      "fusion_baseline": {
+        "query_index": 7016,
+        "class_name": "guitar",
+        "item_name": "2cbc0faddf227502bbc745a3524d966b.npy",
+        "ap": 0.10005299440192343,
+        "hits_at_k": 1,
+        "topk": [
+          {
+            "rank": 1,
+            "gallery_index": 15450,
+            "class_name": "rifle",
+            "item_name": "8f70b211673e64c9c97e9355e94c4f15.npy",
+            "score": 0.9849821925163269,
+            "is_correct": false
+          },
+          {
+            "rank": 2,
+            "gallery_index": 5031,
+            "class_name": "car",
+            "item_name": "d353bf0e0dfe3ac29cbc1c09129e1507.npy",
+            "score": 0.9846740961074829,
+            "is_correct": false
+          },
+          {
+            "rank": 3,
+            "gallery_index": 13463,
+            "class_name": "bench",
+            "item_name": "2355964634eba1da35eb9316401353ce.npy",
+            "score": 0.9840185642242432,
+            "is_correct": false
+          },
+          {
+            "rank": 4,
+            "gallery_index": 13050,
+            "class_name": "bench",
+            "item_name": "7c40c1a2e4476afbaca9cc236210e91.npy",
+            "score": 0.9830672740936279,
+            "is_correct": false
+          },
+          {
+            "rank": 5,
+            "gallery_index": 16493,
+            "class_name": "guitar",
+            "item_name": "f6146aa6171dd4f4828b9741c7dfc3ed.npy",
+            "score": 0.9828996062278748,
+            "is_correct": true
+          }
+        ]
+      },
+      "fusion_lora": {
+        "query_index": 7016,
+        "class_name": "guitar",
+        "item_name": "2cbc0faddf227502bbc745a3524d966b.npy",
+        "ap": 0.6922324570879483,
+        "hits_at_k": 4,
+        "topk": [
+          {
+            "rank": 1,
+            "gallery_index": 16456,
+            "class_name": "guitar",
+            "item_name": "e70d5369f840577593f0194265a9746c.npy",
+            "score": 0.9211044907569885,
+            "is_correct": true
+          },
+          {
+            "rank": 2,
+            "gallery_index": 444,
+            "class_name": "knife",
+            "item_name": "d6924db1f51953eecaecbfc7057f661f.npy",
+            "score": 0.9205629229545593,
+            "is_correct": false
+          },
+          {
+            "rank": 3,
+            "gallery_index": 16304,
+            "class_name": "guitar",
+            "item_name": "d3684d071dcb6bffd3193ed047bef161.npy",
+            "score": 0.9199514389038086,
+            "is_correct": true
+          },
+          {
+            "rank": 4,
+            "gallery_index": 16427,
+            "class_name": "guitar",
+            "item_name": "853a5832f15461c9e8f705eb96ba3376.npy",
+            "score": 0.9185439348220825,
+            "is_correct": true
+          },
+          {
+            "rank": 5,
+            "gallery_index": 16347,
+            "class_name": "guitar",
+            "item_name": "aa86d20d03b2303593f0194265a9746c.npy",
+            "score": 0.9178683161735535,
+            "is_correct": true
+          }
+        ]
+      }
+    },
+    {
+      "query_label": "Query 3",
+      "query_index": 358,
+      "class_name": "bookshelf",
+      "item_name": "e3edade4418b0b88bcb7a87b4876a2a8.npy",
+      "fusion_baseline": {
+        "query_index": 358,
+        "class_name": "bookshelf",
+        "item_name": "e3edade4418b0b88bcb7a87b4876a2a8.npy",
+        "ap": 0.07986143448432681,
+        "hits_at_k": 1,
+        "topk": [
+          {
+            "rank": 1,
+            "gallery_index": 832,
+            "class_name": "bookshelf",
+            "item_name": "18fe362284ba7ca4d810b14a81e12eca.npy",
+            "score": 0.984994113445282,
+            "is_correct": true
+          },
+          {
+            "rank": 2,
+            "gallery_index": 13178,
+            "class_name": "bench",
+            "item_name": "110f199f516657c1473448e3f3f73bc2.npy",
+            "score": 0.9842633605003357,
+            "is_correct": false
+          },
+          {
+            "rank": 3,
+            "gallery_index": 13459,
+            "class_name": "bench",
+            "item_name": "cd385ebe6cd0c1262acc546c71bed8c7.npy",
+            "score": 0.9836954474449158,
+            "is_correct": false
+          },
+          {
+            "rank": 4,
+            "gallery_index": 10387,
+            "class_name": "sofa",
+            "item_name": "86a7258b0f094aa6a3fa78fb8c679d78.npy",
+            "score": 0.9835711717605591,
+            "is_correct": false
+          },
+          {
+            "rank": 5,
+            "gallery_index": 13472,
+            "class_name": "bench",
+            "item_name": "b6410fb9ca3cad2170a97514aa270017.npy",
+            "score": 0.983322262763977,
+            "is_correct": false
+          }
+        ]
+      },
+      "fusion_lora": {
+        "query_index": 358,
+        "class_name": "bookshelf",
+        "item_name": "e3edade4418b0b88bcb7a87b4876a2a8.npy",
+        "ap": 0.31526765327492134,
+        "hits_at_k": 3,
+        "topk": [
+          {
+            "rank": 1,
+            "gallery_index": 832,
+            "class_name": "bookshelf",
+            "item_name": "18fe362284ba7ca4d810b14a81e12eca.npy",
+            "score": 0.9108341336250305,
+            "is_correct": true
+          },
+          {
+            "rank": 2,
+            "gallery_index": 816,
+            "class_name": "bookshelf",
+            "item_name": "ad6ba923084a6eccbd3049064a592667.npy",
+            "score": 0.9003186821937561,
+            "is_correct": true
+          },
+          {
+            "rank": 3,
+            "gallery_index": 13312,
+            "class_name": "bench",
+            "item_name": "f495bd67af8d9f0cadd1cf65e8dc4de.npy",
+            "score": 0.8832470178604126,
+            "is_correct": false
+          },
+          {
+            "rank": 4,
+            "gallery_index": 13440,
+            "class_name": "bench",
+            "item_name": "459cad806518f195ba6d436b28fcddfb.npy",
+            "score": 0.8826413154602051,
+            "is_correct": false
+          },
+          {
+            "rank": 5,
+            "gallery_index": 965,
+            "class_name": "bookshelf",
+            "item_name": "3e6962cf9ab0ec6d5a7942170a4965f4.npy",
+            "score": 0.8818389773368835,
+            "is_correct": true
+          }
+        ]
+      }
+    }
+  ]
+}

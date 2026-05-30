@@ -215,9 +215,9 @@ def load_adapter(checkpoint_path: str, device) -> Tuple[object, dict]:
             "Adapter checkpoints for this safe evaluator must be trained by "
             "scripts/adapter/train_fusion_adapter.py with "
             "method='fusion_post_adapter', adapter_position='post_fusion', "
-            "and base_feature='rgb_depth_fusion'. The legacy "
-            "scripts/adapter/train_clip_adapter.py checkpoint adapts RGB/Depth "
-            "before fusion and is not compatible with --method adapter here."
+            "and base_feature='rgb_depth_fusion'. Legacy pre-fusion Adapter "
+            "checkpoints adapt RGB/Depth before fusion and are not compatible "
+            "with --method adapter here."
         )
 
     adapter = CLIPResidualAdapter(

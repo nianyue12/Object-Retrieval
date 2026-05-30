@@ -5,6 +5,7 @@ def _l2_normalize(feat: np.ndarray) -> np.ndarray:
     """对单个特征向量做 L2 归一化。"""
     norm = np.linalg.norm(feat)
     if norm > 0:
+        # 归一化后可以直接用点积计算余弦相似度。
         feat = feat / norm
     return feat
 
@@ -27,6 +28,7 @@ def load_feature(feat_path, multi_view=None, aggregation=None):
     feat = np.load(feat_path).astype(np.float32)
 
     # 兼容旧版 multi_view 参数
+    # 新代码优先使用 aggregation，旧脚本传 multi_view 时仍保持原来的语义。
     if aggregation is None:
         if multi_view is None:
             aggregation = "mean"
@@ -45,6 +47,7 @@ def load_feature(feat_path, multi_view=None, aggregation=None):
                 f"Unsupported feature shape for mean aggregation: {feat.shape}"
             )
     elif aggregation == "none":
+        # 保留原始多视图矩阵，交给调用方自己决定如何聚合。
         pass
     else:
         raise ValueError(f"Unsupported aggregation mode: {aggregation}")

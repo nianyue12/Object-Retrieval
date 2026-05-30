@@ -43,6 +43,7 @@ def pointcloud_to_depth(points, cam2world, K, img_size=224):
     points_cam = points_cam[valid]
 
     if len(points_cam) == 0:
+        # 当前视角下没有可见点时返回空深度图。
         return np.zeros((img_size, img_size), dtype=np.float32)
 
     proj = (K @ points_cam.T).T
@@ -59,6 +60,7 @@ def pointcloud_to_depth(points, cam2world, K, img_size=224):
 
     depth = np.zeros((img_size, img_size), dtype=np.float32)
 
+    # 多个点投到同一像素时保留更近的深度，模拟 z-buffer。
     for xi, yi, zi in zip(x, y, z):
         if 0 <= xi < img_size and 0 <= yi < img_size:
             if depth[yi, xi] == 0 or zi < depth[yi, xi]:
@@ -113,6 +115,7 @@ def generate_depth_maps(pc_path, cam_param_path, output_dir):
     depth_maps = []
 
     for i in range(len(cam2world)):
+        # 每个 cam2world 对应一个渲染视角，生成同编号 depth_XX.png。
         depth = pointcloud_to_depth(points, cam2world[i], K)
         depth = normalize_depth(depth)
 
@@ -160,6 +163,7 @@ def batch_process_shapenet55():
         # 获取该类别下所有npy点云文件
         pc_files = [f for f in os.listdir(pc_cat_dir) if f.endswith(".npy")]
         for pc_file in tqdm(pc_files, desc=f"Processing {category} objects"):
+            # 点云文件名、渲染目录名和深度输出目录名都使用同一个 obj_id。
             obj_id = pc_file.replace(".npy", "")
 
             pc_path = os.path.join(pc_cat_dir, pc_file)

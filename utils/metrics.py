@@ -22,6 +22,7 @@ def compute_map(sim_matrix, gallery_labels, query_labels):
     ap_list = []
     for q in tqdm(range(len(query_labels)), desc="Computing mAP"):
         sims = sim_matrix[q]
+        # 相似度越大排名越靠前，所以这里按负号排序。
         ranking = np.argsort(-sims)
         sorted_labels = gallery_labels[ranking]
 
@@ -32,6 +33,7 @@ def compute_map(sim_matrix, gallery_labels, query_labels):
 
         cum_hits = np.cumsum(matches)
         precision = cum_hits / (np.arange(len(matches)) + 1)
+        # AP 只在命中位置累计 precision，再除以相关样本数量。
         ap = np.sum(precision * matches) / matches.sum()
         ap_list.append(float(ap))
 
@@ -55,6 +57,7 @@ def compute_ndcg(sim_matrix, gallery_labels, query_labels):
             ndcg_list.append(0.0)
             continue
 
+        # 越靠前的命中权重越高，折扣项按 log2(rank+1) 衰减。
         discounts = 1.0 / np.log2(np.arange(len(rel)) + 2)
         dcg = np.sum(rel * discounts)
         ideal_rel = np.sort(rel)[::-1]
@@ -84,6 +87,7 @@ def compute_anmrr(sim_matrix, gallery_labels, query_labels):
     nmrr_list = []
 
     for q in tqdm(range(len(query_labels)), desc="Computing ANMRR"):
+        # ANMRR 惩罚相关结果排得太靠后，数值越低表示检索越好。（相关样本排名越靠前，排名误差越小）
         sims = sim_matrix[q]
         ranking = np.argsort(-sims)
         sorted_labels = gallery_labels[ranking]
@@ -129,6 +133,7 @@ def compute_hgm2r_map(dist_matrix, query_labels, gallery_labels, top_k=None):
     if top_k is None:
         top_k = n_gallery
     top_k = min(top_k, n_gallery)
+    # HGM2R 的实现以距离升序排序，因此输入这里的是 distance matrix。
     sorted_indices = dist_matrix.argsort(axis=1)
     results = []
 
@@ -253,6 +258,7 @@ def evaluate_retrieval(sim_matrix, gallery_labels, query_labels, metric_style="h
             sim_matrix, gallery_labels, query_labels
         )
 
+    # both 模式下仍然把 hgm2r 作为主要汇报口径。
     primary_style = "hgm2r" if metric_style in {"hgm2r", "both"} else "legacy"
     return {
         "primary_style": primary_style,

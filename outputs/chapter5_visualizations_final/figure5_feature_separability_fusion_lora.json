@@ -1,0 +1,88 @@
+{
+  "figure": "Feature separability comparison",
+  "protocol_path": "D:\\1Ahaha\\AA3d\\3D-Data-Processing-Toolkit\\configs\\splits\\shapenet_seen10_unseen40_seed0.json",
+  "methods": [
+    "Fusion baseline",
+    "Fusion+LoRA"
+  ],
+  "same_samples_for_both_methods": true,
+  "metric": "silhouette score with cosine distance",
+  "higher_is_better": true,
+  "sample_seed": 11,
+  "num_classes": 8,
+  "samples_per_class": 50,
+  "selected_classes": [
+    "bookshelf",
+    "car",
+    "bowl",
+    "rifle",
+    "knife",
+    "display",
+    "microwave",
+    "bench"
+  ],
+  "caption": "图5-X Fusion与Fusion+LoRA在同一批未知类样本上的特征可分性对比。轮廓系数越高，表示类内聚合和类间分离效果越好。",
+  "overall": {
+    "fusion_baseline": 0.38342827558517456,
+    "fusion_lora": 0.47994673252105713,
+    "gain": 0.09651845693588257
+  },
+  "class_scores": [
+    {
+      "display_label": "类别1",
+      "class_name": "bookshelf",
+      "fusion_baseline": 0.15620703995227814,
+      "fusion_lora": 0.2975751459598541,
+      "gain": 0.141368106007576
+    },
+    {
+      "display_label": "类别2",
+      "class_name": "car",
+      "fusion_baseline": 0.5813764333724976,
+      "fusion_lora": 0.6879637837409973,
+      "gain": 0.10658735036849976
+    },
+    {
+      "display_label": "类别3",
+      "class_name": "bowl",
+      "fusion_baseline": 0.2978488802909851,
+      "fusion_lora": 0.5593021512031555,
+      "gain": 0.2614532709121704
+    },
+    {
+      "display_label": "类别4",
+      "class_name": "rifle",
+      "fusion_baseline": 0.5215779542922974,
+      "fusion_lora": 0.5070910453796387,
+      "gain": -0.014486908912658691
+    },
+    {
+      "display_label": "类别5",
+      "class_name": "knife",
+      "fusion_baseline": 0.3456054925918579,
+      "fusion_lora": 0.451635479927063,
+      "gain": 0.10602998733520508
+    },
+    {
+      "display_label": "类别6",
+      "class_name": "display",
+      "fusion_baseline": 0.29014086723327637,
+      "fusion_lora": 0.3483869433403015,
+      "gain": 0.058246076107025146
+    },
+    {
+      "display_label": "类别7",
+      "class_name": "microwave",
+      "fusion_baseline": 0.6856727004051208,
+      "fusion_lora": 0.6856447458267212,
+      "gain": -2.7954578399658203e-05
+    },
+    {
+      "display_label": "类别8",
+      "class_name": "bench",
+      "fusion_baseline": 0.18899697065353394,
+      "fusion_lora": 0.3019743859767914,
+      "gain": 0.11297741532325745
+    }
+  ]
+}

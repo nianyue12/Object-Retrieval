@@ -26,6 +26,7 @@ from configs.exp_config import BASE_DIR
 DATA_ROOT = os.path.join(BASE_DIR, "OS_MN40_core")
 OUTPUT_ROOT = os.path.join(BASE_DIR, "OS_MN40_core_depth_maps")
 
+# OS-MN40-core 的 RGB 视图文件名形如 h_0.jpg，通过正则解析角度。
 ANGLE_PATTERN = re.compile(r"h_(\d+)\.jpg$", re.IGNORECASE)
 
 
@@ -67,6 +68,7 @@ def normalize_points(points: np.ndarray) -> np.ndarray:
 
     xyz = points[:, :3].copy()
     centroid = xyz.mean(axis=0, keepdims=True)
+    # 先移到原点，再缩放到单位球，保证不同物体尺度可比。
     xyz -= centroid
     radius = np.linalg.norm(xyz, axis=1).max()
     if radius > 0:
@@ -88,6 +90,7 @@ def load_pts(path: str) -> np.ndarray:
         declared_count = int(lines[0])
         point_lines = lines[1:]
     except ValueError:
+        # 有些 .pts 没有首行点数声明，就把所有行都当作点坐标。
         declared_count = None
         point_lines = lines
 
@@ -113,6 +116,7 @@ def parse_view_angles(image_dir: str) -> List[Tuple[str, int]]:
         match = ANGLE_PATTERN.match(filename)
         if not match:
             continue
+        # 角度决定点云绕 z 轴旋转多少，深度图顺序与 RGB 视图保持一致。
         angle = int(match.group(1))
         views.append((filename, angle))
 
@@ -161,6 +165,7 @@ def rasterize_depth(points: np.ndarray, image_size: int) -> np.ndarray:
     xi = np.clip(np.round(px).astype(np.int32), 0, image_size - 1)
     yi = np.clip(np.round(py).astype(np.int32), 0, image_size - 1)
 
+    # 简单 z-buffer：同一像素只保留最近的点。
     for cur_x, cur_y, cur_depth in zip(xi, yi, depth):
         if cur_depth < depth_map[cur_y, cur_x]:
             depth_map[cur_y, cur_x] = cur_depth
@@ -198,10 +203,12 @@ def postprocess_depth(
     if dilation_kernel > 1:
         if dilation_kernel % 2 == 0:
             dilation_kernel += 1
+        # 膨胀填补稀疏点云投影造成的小孔。
         image = image.filter(ImageFilter.MaxFilter(size=dilation_kernel))
 
     if blur_kernel > 1:
         radius = max(0.5, (blur_kernel - 1) / 2.0)
+        # 模糊让深度边界更连续，减少 CLIP 看到的孤立噪点。
         image = image.filter(ImageFilter.GaussianBlur(radius=radius))
 
     return np.asarray(image, dtype=np.float32) / 255.0
@@ -226,6 +233,7 @@ def save_depth_stack(
     views = parse_view_angles(image_dir)
 
     for index, (_, angle_deg) in enumerate(views):
+        # 按 RGB 视图角度旋转点云，再生成对应编号的深度图。
         rotated = rotate_points_z(points, angle_deg)
         depth = rasterize_depth(rotated, image_size=image_size)
         depth = postprocess_depth(
@@ -282,6 +290,7 @@ def main():
         if not os.path.isdir(split_root):
             raise FileNotFoundError(f"Missing split root: {split_root}")
 
+        # train 按类别分层组织，query/target 是扁平物体目录，因此分两套遍历逻辑。
         if split_name == "train":
             iterable = list(iter_train_objects(split_root))
             progress = tqdm(iterable, desc=f"Depth {split_name}")

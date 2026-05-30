@@ -64,7 +64,6 @@ All current main PEFT results follow this rule:
 - Training script: `scripts/adapter/train_fusion_adapter.py`
 - Ranking: cosine similarity of post-fusion Adapter features
 - Test-time text anchors: none
-- Legacy `scripts/adapter/train_clip_adapter.py` adapts RGB and depth before fusion and is not used for this main result.
 
 ### 5. Fusion + LoRA visual-only retrieval
 
@@ -142,14 +141,15 @@ Fusion weight:
 | 0.75 | More RGB weight | 0.5554 | 0.7615 | 0.4544 |
 | 1.00 | RGB only | 0.5512 | 0.7582 | 0.4577 |
 
-CoCoOp Seen-anchor sensitivity:
+CoOp Seen-anchor response weight:
 
-| Setting | mAP | NDCG@100 | ANMRR |
-| --- | ---: | ---: | ---: |
-| `w=0.25, cosine` | 0.5492 | 0.7531 | 0.4642 |
-| `w=0.03, Bhattacharyya, p=0.75` | 0.5732 | 0.7727 | 0.4391 |
-| `w=0.05, Bhattacharyya, p=0.50` | 0.5724 | 0.7722 | 0.4398 |
-| `w=0.05, Bhattacharyya, p=0.75` | 0.5751 | 0.7736 | 0.4374 |
+| weight | mAP | NDCG@100 | ANMRR |
+| ---: | ---: | ---: | ---: |
+| 0.00 | 0.5701 | 0.7709 | 0.4418 |
+| 0.05 | 0.5783 | 0.7748 | 0.4349 |
+| 0.10 | 0.5839 | 0.7770 | 0.4302 |
+| 0.25 | 0.5904 | 0.7781 | 0.4251 |
+| 0.50 | 0.5791 | 0.7693 | 0.4359 |
 
 Post-fusion Adapter hidden dimension:
 
@@ -166,7 +166,7 @@ Post-fusion Adapter hidden dimension:
 - `models/`: lightweight CLIP wrappers plus CoOp/CoCoOp prompt learner modules and the residual feature Adapter.
 - `utils/`: shared helpers for CLIP loading, feature loading, protocol handling, retrieval metrics, and safety metadata.
 - `configs/`: default paths and saved protocol splits.
-- `results/`: experiment outputs. Direct script outputs currently go to `results/unseen_retrieval`, `results/prompt_tuning`, `results/adapter`, and `results/lora`.
+- `results/`: thesis-aligned experiment outputs, including curated main results, ablations, and PEFT checkpoints.
 - `datasets/`: reserved for dataset notes, manifests, and benchmark adapters. Raw datasets are not stored in this repository.
 - `CLIP/`: vendored OpenAI CLIP source used by this project.
 
@@ -187,19 +187,14 @@ Current external roots used by the project:
 
 ## Result Organization
 
-Current script outputs remain unchanged for compatibility:
+Current stored results are organized around the thesis:
 
-- `results/unseen_retrieval/`: retrieval JSON outputs written by evaluation scripts
-- `results/`: safe Fusion+PEFT JSON summaries from `run_fusion_peft_retrieval.py`
-- `results/prompt_tuning/`: CoOp and CoCoOp checkpoints plus training summaries
-- `results/adapter/`: Adapter checkpoints plus training summaries
-- `results/lora/`: LoRA checkpoints plus training summaries
-
-Reserved folders for manual curation:
-
-- `results/main/`: final tables or selected runs for the thesis
-- `results/ablations/`: controlled comparison runs
-- `results/debug/`: temporary or throwaway analysis outputs
+- `results/main/`: curated main ShapeNet retrieval results and reported prompt checkpoints
+- `results/ablations/`: Fusion weight ablations and OS-MN40-core supplementary results
+- `results/adapter/`: reported post-fusion Adapter checkpoints for hidden dimensions 64, 128, and 256
+- `results/lora/`: reported LoRA checkpoint and training summary
+- `results/prompt_tuning/`: reported CoOp and CoCoOp checkpoints
+- `outputs/chapter5_visualizations_final/`: final Figure 5-1 and Figure 5-2 visualizations
 
 ## Run
 
@@ -310,9 +305,9 @@ python scripts/main/run_fusion_peft_retrieval.py --method fusion --metric_style 
 
 Key outputs:
 
-- `results/unseen_retrieval/rgb_zero_shot_hgm2r.json` or `rgb_zero_shot_both.json`
-- `results/unseen_retrieval/depth_zero_shot_hgm2r.json` or `depth_zero_shot_both.json`
-- `results/unseen_retrieval/fusion_zero_shot_alpha0p50_hgm2r.json` or `fusion_zero_shot_alpha0p50_both.json`
+- `results/main/shapenet/retrieval/rgb_zero_shot_both.json`
+- `results/main/shapenet/retrieval/depth_zero_shot_both.json`
+- `results/main/shapenet/retrieval/fusion_zero_shot_alpha0p50_both.json`
 - `results/fusion_baseline_hgm2r.json`
 - `results/adapter/fusion_post_adapter_h128_seed0.pt` and `fusion_post_adapter_h128_seed0.json`
 - `results/fusion_adapter_visual_only_hgm2r.json`

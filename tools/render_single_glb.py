@@ -17,6 +17,7 @@ import bpy
 from mathutils import Vector
 
 parser = argparse.ArgumentParser()
+# BlenderProc 会把这些参数从 batch_render.py 传进来。
 parser.add_argument(
     "--object_path",
     type=str,
@@ -57,6 +58,7 @@ scene.cycles.transparent_max_bounces = 3
 scene.cycles.transmission_bounces = 3
 scene.cycles.filter_width = 0.01
 scene.cycles.use_denoising = True
+# 透明背景方便后续把物体视图用于展示或特征提取。
 scene.render.film_transparent = True
 
 def add_lighting() -> None:
@@ -101,6 +103,7 @@ def load_object(object_path: str) -> None:
         raise ValueError(f"Unsupported file type: {object_path}")
 
 def scene_bbox(single_obj=None, ignore_matrix=False):
+    # 计算场景中所有 mesh 的世界坐标包围盒，用于后续归一化。
     bbox_min = (math.inf,) * 3
     bbox_max = (-math.inf,) * 3
     found = False
@@ -128,6 +131,7 @@ def scene_meshes():
 
 def normalize_scene():
     bbox_min, bbox_max = scene_bbox()
+    # 先按最长边缩放，再把物体中心平移到原点附近。
     scale = 1 / max(bbox_max - bbox_min)
     for obj in scene_root_objects():
         obj.scale = obj.scale * scale * 0.8
@@ -192,6 +196,7 @@ def save_images(object_file: str) -> None:
             [np.pi / 3 * 2, np.pi / 2],
             [np.pi / 3 * 2, np.pi],
             [np.pi / 3 * 2, np.pi / 2 * 3]]
+    # 这里固定 12 个视角，和后续多视图特征提取脚本的 N_VIEWS 对齐。
     assert args.num_images == len(views), \
         "num_images must match number of predefined camera views"
 
@@ -215,6 +220,7 @@ def save_images(object_file: str) -> None:
 
     data = bproc.renderer.render(verbose=True)
     for index, image in enumerate(data["colors"]):
+        # 保存 RGBA RGB 渲染图，文件名使用四位编号。
         render_path = os.path.join(args.output_dir, f"rgb_{index:04d}.png")
         save_array_as_image(image, "colors", render_path)
 
@@ -226,6 +232,7 @@ def save_images(object_file: str) -> None:
     for index, depth in enumerate(data["depth"]):
         depth_file_base = f"depth_{index:04d}"
 
+        # 背景/过远深度置零，只把有效物体深度映射到 [0, 1]。
         # 可视化 depth，用0-1归一化处理，避免 inf/大值
         depth_vis = depth.copy()
         depth_vis[depth_vis > 10.0] = 0.0  # 统一背景/远距离
@@ -247,6 +254,7 @@ def save_images(object_file: str) -> None:
     cam2worlds = np.stack(cam2worlds, axis=0)  # [V, 4, 4]
     K = bproc.camera.get_intrinsics_as_K_matrix()
 
+    # 相机外参和内参会被点云转深度脚本复用。
     np.savez(
         os.path.join(args.output_dir, "camera_params.npz"),
         cam2world=cam2worlds,
@@ -268,6 +276,7 @@ def download_object(object_url: str) -> str:
     """Download the object and return the path."""
     # uid = uuid.uuid4()
     uid = object_url.split("/")[-1].split(".")[0]
+    # 远程模型先下载到临时文件，完成后再改名，避免半下载文件被误用。
     tmp_local_path = os.path.join("tmp-objects", f"{uid}.glb" + ".tmp")
     local_path = os.path.join("tmp-objects", f"{uid}.glb")
     # wget the file and put it in local_path

@@ -21,6 +21,7 @@ from utils.protocol import load_protocol
 
 DATA_ROOT = os.path.join(BASE_DIR, "OS_MN40_core")
 DEPTH_ROOT = os.path.join(BASE_DIR, "OS_MN40_core_depth_maps")
+# RGB/Depth 输出目录和协议路径保持独立，便于与 ShapeNet 实验并行保存。
 DEFAULT_PROTOCOL_PATH = os.path.join(
     PROJECT_ROOT,
     "configs",
@@ -65,6 +66,7 @@ def build_unique_items(protocol: dict) -> List[Tuple[str, str, str]]:
     """
     unique = {}
 
+    # 用 dict 去重：同一物体如果在协议中重复出现，只保留最后一次 split 标记。
     for class_name, items in protocol["train_seen"].items():
         for item in items:
             unique[(class_name, item)] = "train_seen"
@@ -88,6 +90,7 @@ def parse_angle(filename: str) -> int:
     """从 RGB 视图文件名里解析拍摄角度编号。"""
     name = os.path.splitext(filename)[0]
     try:
+        # 文件名末尾通常带角度编号，用它保证多视图顺序稳定。
         return int(name.split("_")[-1])
     except ValueError:
         return 0
@@ -120,6 +123,7 @@ def load_depth_rgb(path: str) -> Image.Image:
     depth = Image.open(path)
     depth_array = np.array(depth, dtype=np.float32)
 
+    # 如果深度图已经是多通道，只取第一通道作为深度值。
     if depth_array.ndim == 3:
         depth_array = depth_array[..., 0]
 
@@ -181,6 +185,7 @@ def main():
     output_root = resolve_output_root(args)
     protocol = load_protocol(args.protocol)
     items = build_unique_items(protocol)
+    # CLIPEncoder 内部负责预处理、编码和多视图平均池化。
     encoder = CLIPEncoder(model_name=args.clip_model, device=args.device or None)
 
     os.makedirs(output_root, exist_ok=True)
@@ -201,6 +206,7 @@ def main():
         os.makedirs(class_output_dir, exist_ok=True)
         output_path = os.path.join(class_output_dir, item_name)
 
+        # 默认支持断点续跑，除非显式传入 --overwrite。
         if os.path.exists(output_path) and not args.overwrite:
             skipped_count += 1
             continue

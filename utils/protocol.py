@@ -15,6 +15,7 @@ def build_class_file_dict(feat_root: str) -> Dict[str, List[str]]:
     class_to_files: Dict[str, List[str]] = {}
 
     for cls in os.listdir(feat_root):
+        # 每个类别对应一个子目录，目录内的 .npy 文件就是该类别样本。
         cls_path = os.path.join(feat_root, cls)
         if not os.path.isdir(cls_path):
             continue
@@ -38,6 +39,7 @@ def build_common_class_items(rgb_root: str, depth_root: str) -> ClassItems:
     depth_dict = build_class_file_dict(depth_root)
 
     common: ClassItems = {}
+    # 只保留 RGB 和 Depth 两边文件名都存在的样本，保证后续融合时能一一对应。
     for cls in sorted(set(rgb_dict.keys()) & set(depth_dict.keys())):
         rgb_names = {os.path.basename(path) for path in rgb_dict[cls]}
         depth_names = {os.path.basename(path) for path in depth_dict[cls]}
@@ -86,6 +88,7 @@ def build_seen_unseen_protocol(
         )
 
     np.random.shuffle(candidate_classes)
+    # 类别层面先切 seen/unseen，避免同一类别同时出现在训练和测试侧。
     seen_classes = candidate_classes[:seen_num]
     unseen_classes = candidate_classes[seen_num : seen_num + unseen_num]
 
@@ -97,6 +100,7 @@ def build_seen_unseen_protocol(
     for cls in seen_classes:
         items = class_to_items[cls].copy()
         random.shuffle(items)
+        # seen 类用于参数适配训练，因此再拆成 train_seen 和 val_seen。
         train_items, val_items = _split_items(items, seen_train_ratio)
         train_seen[cls] = train_items
         val_seen[cls] = val_items
@@ -104,6 +108,7 @@ def build_seen_unseen_protocol(
     for cls in unseen_classes:
         items = class_to_items[cls].copy()
         random.shuffle(items)
+        # unseen 类只用于检索评估，拆成 gallery 和 query。
         gallery_items, query_items = _split_items(items, unseen_gallery_ratio)
         gallery_unseen[cls] = gallery_items
         query_unseen[cls] = query_items

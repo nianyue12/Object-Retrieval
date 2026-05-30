@@ -1,7 +1,7 @@
 {
     "method": "visual_language_rerank",
     "mode": "fusion",
-    "protocol_path": "configs/splits/os_mn40_core_seen8_unseen32_seed0.json",
+    "protocol_path": "D:\\1Ahaha\\AA3d\\3D-Data-Processing-Toolkit\\configs\\splits\\os_mn40_core_seen8_unseen32_seed0.json",
     "clip_model": "ViT-B/32",
     "prompt_mode": "fixed",
     "prompt_ckpt": "",
@@ -103,14 +103,14 @@
         "mAP": 0.5549543224901621,
         "NDCG@100": 0.6989111604175857,
         "ANMRR": 0.4573403047452313,
-        "Recall@100": 13.26625
+        "Recall@100": 0.3238437388382741
     },
     "metrics_by_style": {
         "hgm2r": {
             "mAP": 0.5549543224901621,
             "NDCG@100": 0.6989111604175857,
             "ANMRR": 0.4573403047452313,
-            "Recall@100": 13.26625
+            "Recall@100": 0.3238437388382741
         }
     },
     "query_rgb_semantic_weight_mean": 0.7086142301559448,

@@ -116,6 +116,7 @@ def normalize_rows(feats: np.ndarray) -> np.ndarray:
 
 def softmax_rows(logits: np.ndarray) -> np.ndarray:
     """对每一行 logits 做 softmax。"""
+    # 先减去行最大值，避免 exp 时出现数值溢出。
     logits = logits - logits.max(axis=1, keepdims=True)
     exp_logits = np.exp(logits)
     return exp_logits / np.clip(exp_logits.sum(axis=1, keepdims=True), 1e-12, None)
@@ -139,6 +140,7 @@ def resolve_text_classes(protocol: dict, text_scope: str):
         all    -> 同时使用 seen + unseen 类别
     """
     if text_scope == "all":
+        # dict.fromkeys 用来去重并保留 seen + unseen 的原始顺序。
         return list(dict.fromkeys(protocol["seen_classes"] + protocol["unseen_classes"]))
     return list(protocol["unseen_classes"])
 
@@ -156,6 +158,7 @@ def load_split_rgb_depth(
     depth_feats = []
     labels = []
 
+    # RGB 和 Depth 同时加载，后续可以按不同 mode 复用同一份数据。
     for cls, item in get_split_items(protocol, split_name):
         rgb_path = os.path.join(rgb_feat_root, cls, item)
         depth_path = os.path.join(depth_feat_root, cls, item)
@@ -193,8 +196,10 @@ def build_semantic_branch(
     """
     功能：基于固定文本原型构建单个模态的语义分支输出。
     """
+    # logits 表示视觉特征对各个文本类别原型的匹配程度。
     logits = (feats @ text_prototypes.T) / temperature
     probs = softmax_rows(logits).astype(np.float32)
+    # 用类别概率加权文本原型，得到一个连续语义嵌入。
     semantic_embed = normalize_rows(probs @ text_prototypes).astype(np.float32)
     confidence = entropy_confidence(probs).astype(np.float32)
 
@@ -226,6 +231,7 @@ def fuse_semantic_branches(
         return depth_branch
 
     if semantic_fusion == "confidence":
+        # 置信度越高的模态，在语义融合时权重越大。
         rgb_weight = alpha * rgb_branch["confidence"]
         depth_weight = (1.0 - alpha) * depth_branch["confidence"]
         denom = np.clip(rgb_weight + depth_weight, 1e-12, None)
@@ -244,6 +250,7 @@ def fuse_semantic_branches(
     fused_probs = softmax_rows(fused_logits).astype(np.float32)
     fused_embed = normalize_rows(fused_probs @ text_prototypes).astype(np.float32)
 
+    # 记录平均权重，方便结果 JSON 里诊断 RGB/Depth 语义分支贡献。
     return {
         "logits": fused_logits,
         "probs": normalize_rows(fused_probs),
@@ -285,6 +292,7 @@ def build_semantic_similarity(
     if semantic_similarity == "embed":
         return query_semantic["embed"][start:end] @ gallery_semantic["embed"].T
 
+    # hybrid 同时利用类别概率分布和加权文本嵌入。
     prob_sim = query_semantic["probs"][start:end] @ gallery_semantic["probs"].T
     embed_sim = query_semantic["embed"][start:end] @ gallery_semantic["embed"].T
     return 0.5 * (prob_sim + embed_sim)
@@ -313,6 +321,7 @@ def blend_similarity(
 
     rerank_topk = min(rerank_topk, visual_sim.shape[1])
     blended = visual_sim.copy()
+    # top-k 策略只调整视觉排名靠前的候选，避免语义分支影响整个 gallery。
     topk_indices = np.argpartition(-visual_sim, rerank_topk - 1, axis=1)[
         :, :rerank_topk
     ]
@@ -355,6 +364,7 @@ def compute_combined_similarity(
         desc="Computing visual-language similarity",
     ):
         end = min(start + batch_size, query_visual.shape[0])
+        # 视觉相似度和语义相似度都按 query batch 分块计算。
         visual_sim = query_visual[start:end] @ gallery_visual.T
         semantic_sim = build_semantic_similarity(
             query_semantic,
@@ -399,6 +409,7 @@ def build_default_save_name(args) -> str:
     if args.combine_strategy != "global_blend":
         parts.append(f"topk{args.rerank_topk}")
     if args.metric_style != "legacy":
+        # legacy 是历史默认命名，hgm2r/both 才显式写进文件名。
         parts.append(args.metric_style)
     return "_".join(parts) + ".json"
 
@@ -441,6 +452,7 @@ def main():
         args.alpha,
     )
 
+    # 语义分支分两种路线：CoCoOp 动态生成文本特征，其余模式先生成固定文本原型。
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.prompt_mode == "cocoop":
         # CoCoOp 会根据每个样本特征动态生成文本分支
@@ -558,6 +570,7 @@ def main():
         gallery_semantic["probs"], text_classes, gallery_labels
     )
 
+    # 保存结果时同时写入语义诊断指标，便于分析 rerank 是否真的有帮助。
     os.makedirs(UNSEEN_RESULT_DIR, exist_ok=True)
     save_name = args.save_name or build_default_save_name(args)
     save_path = os.path.join(UNSEEN_RESULT_DIR, save_name)

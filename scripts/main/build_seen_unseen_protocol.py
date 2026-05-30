@@ -30,6 +30,7 @@ def main():
     """脚本入口：构建协议并输出基础统计信息。"""
     # 先找出 RGB 和深度两边都存在的公共样本
     class_to_items = build_common_class_items(RGB_FEAT_DIR, DEPTH_FEAT_DIR)
+    # 协议生成只依赖公共样本，避免后续读取某个模态特征时找不到文件。
     protocol = build_seen_unseen_protocol(
         class_to_items=class_to_items,
         seen_num=KNOWN_NUM,
@@ -42,6 +43,7 @@ def main():
     # 保存协议文件，供训练和检索脚本复用
     save_protocol(protocol, DEFAULT_PROTOCOL_PATH)
 
+    # 下面这些统计用于快速确认划分规模是否符合实验设计。
     gallery_size = sum(len(v) for v in protocol["gallery_unseen"].values())
     query_size = sum(len(v) for v in protocol["query_unseen"].values())
     train_size = sum(len(v) for v in protocol["train_seen"].values())

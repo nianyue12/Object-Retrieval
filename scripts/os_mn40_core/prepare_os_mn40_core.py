@@ -18,6 +18,7 @@ from configs.exp_config import BASE_DIR
 
 DATA_ROOT = os.path.join(BASE_DIR, "OS_MN40_core")
 RAW_ROOT = os.path.join(BASE_DIR, "OS_MN40_core_raw")
+# 默认协议文件会被后续 OS-MN40-core 特征提取和检索脚本复用。
 DEFAULT_PROTOCOL_PATH = os.path.join(
     PROJECT_ROOT,
     "configs",
@@ -71,6 +72,7 @@ def read_label_file(path: str) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
             if not line:
                 continue
 
+            # 原始标签文件每行格式为 object_id,class_name。
             parts = line.split(",", 1)
             if len(parts) != 2:
                 raise ValueError(f"Invalid label line at {path}:{line_no}: {line}")
@@ -93,6 +95,7 @@ def discover_seen_items(train_root: str) -> Dict[str, List[str]]:
     seen_dict: Dict[str, List[str]] = {}
 
     for class_name in sorted(os.listdir(train_root)):
+        # train 目录按类别组织，因此这里扫描出的类别就是 seen 类。
         class_dir = os.path.join(train_root, class_name)
         if not os.path.isdir(class_dir):
             continue
@@ -123,6 +126,7 @@ def validate_source_dirs(
     query_root = os.path.join(data_root, "query")
     target_root = os.path.join(data_root, "target")
 
+    # 协议中写入的每个 item 都要能在源数据目录中找到对应物体目录。
     for class_name, items in seen_items.items():
         for item in items:
             object_id = os.path.splitext(item)[0]
@@ -166,6 +170,7 @@ def main():
     seen_classes = sorted(seen_items.keys())
     unseen_classes = sorted(set(query_labels.keys()) | set(target_labels.keys()))
     overlap = sorted(set(seen_classes) & set(unseen_classes))
+    # OS-MN40-core 的开放集设置要求 seen 类和 unseen 类互不重叠。
     if overlap:
         raise ValueError(
             f"OS-MN40-core seen/unseen classes should not overlap, but found {overlap}"

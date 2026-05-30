@@ -24,6 +24,7 @@ TOOLKIT_SCRIPT = os.path.join(ROOT_DIR, "3D-Data-Processing-Toolkit", "tools","r
 CATEGORIES_TO_RENDER = [ "ashcan" ]  # 可扩展：比如加 "chair", "car" 等
 
 # ========== 强制环境变量（无C盘写入） ==========
+# 这些临时目录显式放到 D 盘，避免 BlenderProc 默认写入系统盘。
 os.environ["BLENDER_PROC_TEMP_DIR"] = BLENDER_PROC_TEMP
 os.environ["TMP"] = BLENDER_PROC_TEMP
 os.environ["TEMP"] = BLENDER_PROC_TEMP
@@ -42,6 +43,7 @@ def check_blender():
         sys.exit(1)
     # 验证Blender能否运行
     try:
+        # 先调用 --version，提前发现 Blender 路径或版本配置错误。
         result = subprocess.run(
             [BLENDER_EXE, "--version"],
             capture_output=True,
@@ -86,6 +88,7 @@ def render_category(category):
     
     # 获取所有GLB模型
     try:
+        # 当前类别下所有 .glb 都会被送入 render_single_glb.py。
         glb_files = [f for f in os.listdir(category_dir) if f.endswith(".glb")]
     except Exception as e:
         print(f"\n 读取类别 {category} 模型失败：{str(e)}")
@@ -131,6 +134,7 @@ def render_category(category):
                 len(depth_png_files) >= 12 or len(depth_npy_files) >= 12
             )
 
+            # RGB、Depth 和相机参数都完整时认为该物体已经渲染完毕。
             if (
                 len(rgb_files) >= 12
                 and has_complete_depth
@@ -156,6 +160,7 @@ def render_category(category):
         
         try:
             print(f"[{idx+1}/{total_models}] 正在渲染：{model_name}")
+            # 每个模型单独调用 BlenderProc，失败时写入日志并继续处理下一个。
             # 调用 BlenderProc 执行渲染
             result = subprocess.run(
                 render_cmd,
@@ -235,6 +240,7 @@ if __name__ == "__main__":
             completed_categories += 1
     
     # 输出全局统计
+    # 这里统计的是类别级完成情况，单模型失败详情在各类别失败日志中。
     print(f"\n{'='*80}")
     print(f" 所有类别批量渲染完成！")
     print(f"总类别数：{total_categories}")

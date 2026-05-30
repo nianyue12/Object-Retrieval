@@ -63,6 +63,7 @@ def load_single_modality(protocol, split_name, feat_root):
     entries = materialize_split_paths(protocol, split_name, feat_root)
     feats, labels = [], []
     for cls, path in entries:
+        # 单模态路径已经由 materialize_split_paths 拼好，直接读取特征。
         feats.append(load_feature(path, aggregation="mean"))
         labels.append(cls)
     return np.stack(feats), np.array(labels)
@@ -74,6 +75,7 @@ def load_fusion(protocol, split_name, alpha, rgb_feat_root, depth_feat_root):
     """
     feats, labels = [], []
     for cls, item in get_split_items(protocol, split_name):
+        # fusion 模式要求 RGB 和 Depth 使用相同的 class/item 索引。
         rgb_feat = load_feature(
             os.path.join(rgb_feat_root, cls, item),
             aggregation="mean",
@@ -93,6 +95,7 @@ def load_fusion(protocol, split_name, alpha, rgb_feat_root, depth_feat_root):
 
 def normalize_rows(feats):
     """对特征矩阵按行做 L2 归一化。"""
+    # 后续矩阵乘法直接作为余弦相似度。
     return feats / np.linalg.norm(feats, axis=1, keepdims=True)
 
 
@@ -103,6 +106,7 @@ def compute_similarity(query_feats, gallery_feats):
     sim = np.zeros((query_feats.shape[0], gallery_feats.shape[0]), dtype=np.float32)
     for start in tqdm(range(0, query_feats.shape[0], BATCH_SIZE), desc="Computing similarity"):
         end = min(start + BATCH_SIZE, query_feats.shape[0])
+        # 分块计算可以避免一次性构造过大的中间矩阵。
         sim[start:end] = query_feats[start:end] @ gallery_feats.T
     return sim
 
@@ -120,6 +124,7 @@ def main():
     args = parse_args()
     protocol = load_protocol(args.protocol)
 
+    # 按 mode 选择读取 RGB、Depth 或融合特征，后续评估流程保持一致。
     if args.mode == "rgb":
         gallery_feats, gallery_labels = load_single_modality(
             protocol, "gallery_unseen", args.rgb_feat_root
@@ -181,6 +186,7 @@ def main():
     save_name = args.save_name or decorate_save_name(base_save_name, args.metric_style)
     save_path = os.path.join(UNSEEN_RESULT_DIR, save_name)
 
+    # 保存完整实验配置，便于结果文件独立复现。
     output = {
         "mode": args.mode,
         "protocol_path": args.protocol,

@@ -20,6 +20,7 @@ from tqdm import tqdm
 from models.clip_encoder import CLIPEncoder
 
 # ===== 配置 =====
+# 深度图也复用 CLIPEncoder，区别在于送入前会先转成 3 通道图像。
 encoder = CLIPEncoder(model_name="ViT-B/32")
 ROOT_IMG_DIR = r"D:/1Ahaha/AA3d/depth_maps"
 OUT_FEAT_DIR = r"D:/1Ahaha/AA3d/output_feat_depth_maps"
@@ -48,6 +49,7 @@ def extract_object_feat(obj_dir):
         else:
             img_array = np.zeros_like(img_array)
 
+        # CLIP 预处理期望图像输入，这里把归一化深度重新映射到 8bit。
         img_array = (img_array * 255).astype(np.uint8)
 
         # 单通道 → 3通道
@@ -97,6 +99,7 @@ for cat_dir in sorted(os.listdir(ROOT_IMG_DIR)):
     if not os.path.isdir(full_cat_dir):
         continue
 
+    # 深度图目录已经按类别命名，不需要像 RGB 那样去掉 `_multi_view` 后缀。
     cat_name = cat_dir
     cat_feat_dir = os.path.join(OUT_FEAT_DIR, cat_name)
     os.makedirs(cat_feat_dir, exist_ok=True)
@@ -126,6 +129,7 @@ for cat_dir in sorted(os.listdir(ROOT_IMG_DIR)):
             continue
 
         out_path = os.path.join(cat_feat_dir, f"{obj_id}.npy")
+        # 输出路径与 RGB 特征保持同样的 `<class>/<object>.npy` 结构。
         np.save(out_path, feat)
 
 print("\n✅ All features extracted.")

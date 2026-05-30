@@ -1,0 +1,82 @@
+{
+    "mode": "fusion",
+    "protocol_path": "configs\\splits\\shapenet_seen10_unseen40_seed0.json",
+    "seen_classes": [
+        "laptop",
+        "cabinet",
+        "bus",
+        "rocket",
+        "basket",
+        "lamp",
+        "pot",
+        "microphone",
+        "file",
+        "bed"
+    ],
+    "unseen_classes": [
+        "motorcycle",
+        "piano",
+        "knife",
+        "mug",
+        "dishwasher",
+        "bookshelf",
+        "cap",
+        "telephone",
+        "vessel",
+        "loudspeaker",
+        "car",
+        "mailbox",
+        "microwave",
+        "chair",
+        "skateboard",
+        "earphone",
+        "sofa",
+        "bottle",
+        "can",
+        "jar",
+        "bench",
+        "clock",
+        "rifle",
+        "washer",
+        "bag",
+        "camera",
+        "pistol",
+        "helmet",
+        "birdhouse",
+        "guitar",
+        "pillow",
+        "faucet",
+        "display",
+        "bowl",
+        "printer",
+        "tower",
+        "bathtub",
+        "ashcan",
+        "train",
+        "stove"
+    ],
+    "gallery_size": 19312,
+    "query_size": 8304,
+    "alpha_fusion": 0.0,
+    "metric_style": "both",
+    "primary_metric_style": "hgm2r",
+    "metrics": {
+        "mAP": 0.4761991790303463,
+        "NDCG@100": 0.6895954999543844,
+        "ANMRR": 0.5283514797286458,
+        "Recall@100": 0.18048053885503718
+    },
+    "metrics_by_style": {
+        "legacy": {
+            "mAP": 0.4727312071263779,
+            "NDCG": 0.845729344715901,
+            "ANMRR": 0.3774129046016519
+        },
+        "hgm2r": {
+            "mAP": 0.4761991790303463,
+            "NDCG@100": 0.6895954999543844,
+            "ANMRR": 0.5283514797286458,
+            "Recall@100": 0.18048053885503718
+        }
+    }
+}

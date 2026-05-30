@@ -1,5 +1,5 @@
 {
-    "mode": "fusion",
+    "mode": "rgb",
     "protocol_path": "D:\\1Ahaha\\AA3d\\3D-Data-Processing-Toolkit\\configs\\splits\\os_mn40_core_seen8_unseen32_seed0.json",
     "seen_classes": [
         "airplane",
@@ -51,17 +51,17 @@
     "metric_style": "hgm2r",
     "primary_metric_style": "hgm2r",
     "metrics": {
-        "mAP": 0.5214374983913987,
-        "NDCG@100": 0.6801718322022026,
-        "ANMRR": 0.48404694446507895,
-        "Recall@100": 0.30986970567564925
+        "mAP": 0.5315241845710097,
+        "NDCG@100": 0.6878772561170852,
+        "ANMRR": 0.4763828392187947,
+        "Recall@100": 0.31093031544691385
     },
     "metrics_by_style": {
         "hgm2r": {
-            "mAP": 0.5214374983913987,
-            "NDCG@100": 0.6801718322022026,
-            "ANMRR": 0.48404694446507895,
-            "Recall@100": 0.30986970567564925
+            "mAP": 0.5315241845710097,
+            "NDCG@100": 0.6878772561170852,
+            "ANMRR": 0.4763828392187947,
+            "Recall@100": 0.31093031544691385
         }
     }
 }
